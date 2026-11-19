@@ -36,6 +36,7 @@ export const api = {
   album: (id) => request("GET", `albums/${id}`),
   createAlbum: (name, by) => request("POST", "albums", { name, by }),
   renameAlbum: (id, name) => request("PATCH", `albums/${id}`, { name }),
+  setCover: (id, photoId) => request("PATCH", `albums/${id}`, { cover_id: photoId }),
   deleteAlbum: (id, by) => request("DELETE", `albums/${id}`, { by }),
   restoreAlbum: (id) => request("POST", `albums/${id}/restore`, {}),
 

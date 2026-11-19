@@ -16,7 +16,8 @@ const SCHEMA = [
      created_at INTEGER NOT NULL,
      created_by TEXT NOT NULL,
      deleted_at INTEGER,
-     deleted_by TEXT
+     deleted_by TEXT,
+     cover_id TEXT
    )`,
   `CREATE TABLE IF NOT EXISTS photos (
      id TEXT PRIMARY KEY,
@@ -41,16 +42,33 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS photos_deleted ON photos(deleted_at)`,
 ];
 
+// Columns added after the first release. Adding one that exists fails harmlessly.
+const MIGRATIONS = [`ALTER TABLE albums ADD COLUMN cover_id TEXT`];
+
 let schemaReady = null;
 function ensureSchema(env) {
   if (!schemaReady) {
-    schemaReady = env.DB.batch(SCHEMA.map((s) => env.DB.prepare(s))).catch((e) => {
+    schemaReady = (async () => {
+      await env.DB.batch(SCHEMA.map((s) => env.DB.prepare(s)));
+      for (const m of MIGRATIONS) {
+        try {
+          await env.DB.prepare(m).run();
+        } catch (e) {
+          if (!/duplicate column/i.test(String(e?.message))) throw e;
+        }
+      }
+    })().catch((e) => {
       schemaReady = null;
       throw e;
     });
   }
   return schemaReady;
 }
+
+// The chosen cover if it is still a visible photo with a preview, otherwise the first photo.
+const COVER_SQL = `COALESCE(
+  (SELECT c.id FROM photos c WHERE c.id = a.cover_id AND c.album_id = a.id AND c.status = 'ready' AND c.deleted_at IS NULL AND c.has_preview = 1),
+  (SELECT c.id FROM photos c WHERE c.album_id = a.id AND c.status = 'ready' AND c.deleted_at IS NULL AND c.has_preview = 1 ORDER BY c.taken_at LIMIT 1))`;
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -138,7 +156,7 @@ async function route(request, env, url) {
     if (!b && method === "GET") return listAlbums(env);
     if (!b && method === "POST") return createAlbum(request, env);
     if (b && !c && method === "GET") return getAlbum(env, b);
-    if (b && !c && method === "PATCH") return renameAlbum(request, env, b);
+    if (b && !c && method === "PATCH") return updateAlbum(request, env, b);
     if (b && !c && method === "DELETE") return deleteAlbum(request, env, b);
     if (b && c === "restore" && method === "POST") return restoreAlbum(env, b);
     if (b && c === "photos" && method === "POST") return initPhoto(request, env, b);
@@ -286,9 +304,7 @@ async function listAlbums(env) {
             COUNT(p.id) AS count,
             MIN(p.taken_at) AS first_taken,
             MAX(p.taken_at) AS last_taken,
-            (SELECT c.id FROM photos c
-              WHERE c.album_id = a.id AND c.status = 'ready' AND c.deleted_at IS NULL AND c.has_preview = 1
-              ORDER BY c.taken_at LIMIT 1) AS cover_id,
+            ${COVER_SQL} AS cover_id,
             COALESCE(SUM(p.size), 0) AS bytes
        FROM albums a
        LEFT JOIN photos p ON p.album_id = a.id AND p.status = 'ready' AND p.deleted_at IS NULL
@@ -317,23 +333,42 @@ async function loadAlbum(env, id, { allowDeleted = false } = {}) {
 }
 
 async function getAlbum(env, id) {
-  const album = await loadAlbum(env, id);
+  const album = await env.DB.prepare(`SELECT a.*, ${COVER_SQL} AS effective_cover FROM albums a WHERE a.id = ?`).bind(id).first();
+  if (!album || album.deleted_at) throw new HttpError(404, "Dieses Album gibt es nicht (mehr).");
   const { results } = await env.DB.prepare(
     `SELECT id, uploader, filename, mime, size, taken_at, taken_src, width, height, has_preview
        FROM photos
       WHERE album_id = ? AND status = 'ready' AND deleted_at IS NULL
       ORDER BY taken_at, filename`
   ).bind(id).all();
-  return json({ album: { id: album.id, name: album.name, created_at: album.created_at, created_by: album.created_by }, photos: results });
+  return json({
+    album: {
+      id: album.id, name: album.name, created_at: album.created_at, created_by: album.created_by,
+      cover_id: album.effective_cover, cover_chosen: album.cover_id === album.effective_cover && !!album.cover_id,
+    },
+    photos: results,
+  });
 }
 
-async function renameAlbum(request, env, id) {
+async function updateAlbum(request, env, id) {
   await loadAlbum(env, id);
   const body = await readJson(request);
-  const name = String(body.name || "").trim().slice(0, 120);
-  if (!name) throw new HttpError(400, "Gib dem Album einen Namen.");
-  await env.DB.prepare(`UPDATE albums SET name = ? WHERE id = ?`).bind(name, id).run();
-  return json({ ok: true, name });
+  if ("name" in body) {
+    const name = String(body.name || "").trim().slice(0, 120);
+    if (!name) throw new HttpError(400, "Gib dem Album einen Namen.");
+    await env.DB.prepare(`UPDATE albums SET name = ? WHERE id = ?`).bind(name, id).run();
+  }
+  if ("cover_id" in body) {
+    // null means: back to automatic (first photo)
+    if (body.cover_id !== null) {
+      const photo = await env.DB.prepare(
+        `SELECT id FROM photos WHERE id = ? AND album_id = ? AND status = 'ready' AND deleted_at IS NULL AND has_preview = 1`
+      ).bind(String(body.cover_id), id).first();
+      if (!photo) throw new HttpError(400, "Dieses Foto kann nicht das Cover werden.");
+    }
+    await env.DB.prepare(`UPDATE albums SET cover_id = ? WHERE id = ?`).bind(body.cover_id, id).run();
+  }
+  return json({ ok: true });
 }
 
 async function deleteAlbum(request, env, id) {
@@ -496,7 +531,7 @@ async function listTrash(env) {
   const albums = await env.DB.prepare(
     `SELECT a.id, a.name, a.deleted_at, a.deleted_by,
             (SELECT COUNT(*) FROM photos p WHERE p.album_id = a.id AND p.status = 'ready' AND p.deleted_at IS NULL) AS count,
-            (SELECT c.id FROM photos c WHERE c.album_id = a.id AND c.status = 'ready' AND c.has_preview = 1 ORDER BY c.taken_at LIMIT 1) AS cover_id
+            ${COVER_SQL} AS cover_id
        FROM albums a WHERE a.deleted_at IS NOT NULL ORDER BY a.deleted_at DESC`
   ).all();
   const photos = await env.DB.prepare(

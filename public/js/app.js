@@ -15,6 +15,7 @@ const state = {
   filter: null, // uploader name or null for everyone
   selecting: false,
   selected: new Set(),
+  coverPick: false, // choosing an album cover by tapping a photo
   lb: null, // { list, index }
 };
 
@@ -53,6 +54,7 @@ const ICONS = {
   swap: '<path d="M7 7h11l-3-3M17 17H6l3 3"/>',
   out: '<path d="M14 5h5v14h-5M10 8l-4 4 4 4M6 12h10"/>',
   select: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
+  cover: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 15.5l5-4.5 4 3.5 2.5-2 5.5 4.5"/><circle cx="15.5" cy="9.5" r="1.4"/>',
 };
 const icon = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 
@@ -231,6 +233,7 @@ function bindMe(root) {
 window.addEventListener("hashchange", () => route());
 window.addEventListener("ps:logged-out", () => { state.authed = false; renderLogin(); });
 window.addEventListener("popstate", () => { if (state.lb) closeLightbox(true); });
+window.addEventListener("resize", () => syncBarSpace());
 window.addEventListener("beforeunload", (e) => { if (queue.active) { e.preventDefault(); e.returnValue = ""; } });
 
 function route() {
@@ -240,6 +243,8 @@ function route() {
   const hash = location.hash.replace(/^#\/?/, "");
   const [section, id] = hash.split("/");
   setSelecting(false);
+  state.coverPick = false;
+  document.body.style.setProperty("--bar-space", "0px");
   app.onclick = app.ondragenter = app.ondragover = app.ondragleave = app.ondrop = null;
   if (section !== "a") state.album = null;
   if (section === "a" && id) return renderAlbum(id);
@@ -297,12 +302,25 @@ function renderLogin() {
 
 // ---------- who are you ----------
 
+// The logo's hands, drawn inline so they take the page's ink color.
+const HAND_PATH = "M -18 -150 A 17 17 0 0 1 16 -153 L 20 -54 Q 22 -18 54 -16 L 190 -14 A 16 16 0 0 1 190 18 L 62 22 C 80 24 82 46 63 51 C 80 55 80 76 61 80 C 76 84 74 103 55 107 C 40 114 24 118 14 122 L -2 156 A 32 32 0 0 1 -60 128 L -54 72 C -50 32 -42 2 -31 -30 Z";
+const LOGO_GROUP = "translate(256 256) scale(0.84) translate(-256 -256) rotate(-9 256 256)";
+
 function renderWho() {
   document.title = "Wer bist du? – Fotokiste";
+  const tiles = state.names.map((n) =>
+    `<button class="who-tile" data-name="${esc(n)}" style="${person(n)}">${esc(n)}</button>`).join("");
   app.innerHTML = `<section class="who">
-    <header>Wer bist du? Deine Fotos werden mit deinem Namen hochgeladen.</header>
-    <div class="who-grid">
-      ${state.names.map((n) => `<button class="who-tile" data-name="${esc(n)}" style="${person(n)}"><span>${esc(n)}</span></button>`).join("")}
+    <h1 class="display who-title">Wer bist du?</h1>
+    <p class="who-hint">Tippe im Bild auf deinen Namen. Deine Fotos werden damit beschriftet.</p>
+    <div class="who-stage">
+      <svg class="who-hands" viewBox="0 0 512 512" aria-hidden="true">
+        <g transform="${LOGO_GROUP}">
+          <g class="hand-a"><path d="${HAND_PATH}" transform="translate(148 348)"/></g>
+          <g class="hand-b"><path d="${HAND_PATH}" transform="rotate(180 256 256) translate(148 348)"/></g>
+        </g>
+      </svg>
+      <div class="who-frame${state.names.length === 4 ? "" : " many"}">${tiles}</div>
     </div>
   </section>`;
   const who = app.querySelector(".who");
@@ -313,14 +331,16 @@ function renderWho() {
     setMe(name);
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduce) return route();
-    // The chosen color grows to fill the screen, then the albums appear.
+    // The chosen color spreads from the tapped square over the whole screen, then the albums appear.
     who.classList.add("picked");
     const r = tile.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const far = Math.hypot(Math.max(cx, innerWidth - cx), Math.max(cy, innerHeight - cy));
     const grow = document.createElement("div");
     grow.className = "who-expand";
-    grow.setAttribute("style", `${person(name)};left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px`);
+    grow.setAttribute("style", `${person(name)};clip-path:circle(${Math.min(r.width, r.height) / 2}px at ${cx}px ${cy}px)`);
     document.body.appendChild(grow);
-    requestAnimationFrame(() => requestAnimationFrame(() => Object.assign(grow.style, { left: "0px", top: "0px", width: "100vw", height: "100dvh" })));
+    requestAnimationFrame(() => requestAnimationFrame(() => (grow.style.clipPath = `circle(${far}px at ${cx}px ${cy}px)`)));
     setTimeout(() => {
       route();
       grow.style.transition = "opacity .35s ease";
@@ -417,6 +437,7 @@ async function renderAlbum(id, { keepScroll = false } = {}) {
         <div class="menu" id="album-menu" hidden>
           <button type="button" data-act="dl-album">${icon("download")}Album herunterladen</button>
           <button type="button" data-act="rename">${icon("pen")}Umbenennen</button>
+          <button type="button" data-act="pick-cover">${icon("cover")}Cover wählen</button>
           <hr>
           <button type="button" class="danger" data-act="del-album">${icon("trash")}Album löschen</button>
         </div>
@@ -486,9 +507,10 @@ function tile(p, index) {
   const inner = p.has_preview
     ? `<img src="${fileUrl(p.id, "thumb")}" alt="" loading="lazy" decoding="async">`
     : `<span class="ext">${esc(extOf(p.filename).toUpperCase() || "?")}</span>`;
-  return `<button class="tile" data-id="${p.id}" data-i="${index}" style="${person(p.uploader)}"
+  const isCover = state.album?.cover_id === p.id;
+  return `<button class="tile${isCover ? " is-cover" : ""}" data-id="${p.id}" data-i="${index}" style="${person(p.uploader)}"
       aria-label="Foto von ${esc(p.uploader)}, ${when} Uhr" ${state.selecting ? `aria-pressed="${state.selected.has(p.id)}"` : ""}>
-      ${inner}<span class="check">${icon("check")}</span></button>`;
+      ${inner}${isCover ? '<span class="cover-badge">Cover</span>' : ""}<span class="check">${icon("check")}</span></button>`;
 }
 
 function setSelecting(on) {
@@ -498,9 +520,28 @@ function setSelecting(on) {
   app.classList.toggle("selecting", on);
 }
 
+// Toasts and the upload panel sit above whatever bar is pinned to the bottom.
+function syncBarSpace() {
+  const bar = app.querySelector(".select-bar");
+  const h = bar && !bar.hidden ? bar.offsetHeight : 0;
+  document.body.style.setProperty("--bar-space", `${h}px`);
+}
+
 function updateSelectBar() {
+  drawSelectBar();
+  syncBarSpace();
+}
+
+function drawSelectBar() {
   const bar = app.querySelector(".select-bar");
   if (!bar) return;
+  if (state.coverPick) {
+    bar.hidden = false;
+    bar.innerHTML = `<span class="count">Tippe das Foto an, das das Cover werden soll.</span>
+      <button class="btn" data-act="cover-auto">Automatisch</button>
+      <button class="btn" data-act="cover-cancel">Abbrechen</button>`;
+    return;
+  }
   bar.hidden = !state.selecting;
   if (!state.selecting) return;
   const n = state.selected.size;
@@ -515,7 +556,7 @@ let pressTimer = null, longPressed = false;
 const inAlbum = () => location.hash.startsWith("#/a/") && state.album;
 app.addEventListener("pointerdown", (e) => {
   const t = e.target.closest(".tile");
-  if (!t || state.selecting || !inAlbum()) return;
+  if (!t || state.selecting || state.coverPick || !inAlbum()) return;
   longPressed = false;
   pressTimer = setTimeout(() => {
     longPressed = true;
@@ -547,6 +588,12 @@ function bindAlbum(id) {
 
     if (t) {
       if (longPressed) { longPressed = false; return; }
+      if (state.coverPick) {
+        const p = state.photos.find((x) => x.id === t.dataset.id);
+        if (!p?.has_preview) { toast("Für dieses Format gibt es kein Vorschaubild, also kein Cover."); return; }
+        await chooseCover(p.id);
+        return;
+      }
       if (state.selecting) {
         const sel = state.selected;
         sel.has(t.dataset.id) ? sel.delete(t.dataset.id) : sel.add(t.dataset.id);
@@ -596,6 +643,18 @@ function bindAlbum(id) {
         updateSelectBar();
         break;
       }
+      case "pick-cover":
+        closeMenus();
+        setSelecting(false);
+        state.coverPick = true;
+        renderAlbumBody();
+        updateSelectBar();
+        break;
+      case "cover-auto": await chooseCover(null); break;
+      case "cover-cancel":
+        state.coverPick = false;
+        updateSelectBar();
+        break;
       case "dl-album": closeMenus(); await downloadPhotos(state.photos, state.album.name); break;
       case "rename": {
         closeMenus();
@@ -654,6 +713,24 @@ function bindAlbum(id) {
   };
 }
 
+async function chooseCover(photoId) {
+  const album = state.album;
+  try {
+    await api.setCover(album.id, photoId);
+  } catch (e) {
+    toast(e.message);
+    return;
+  }
+  // null means automatic: the first photo with a preview
+  album.cover_id = photoId ?? state.photos.find((p) => p.has_preview)?.id ?? null;
+  state.coverPick = false;
+  if (!state.lb) {
+    renderAlbumBody();
+    updateSelectBar();
+  }
+  toast(photoId ? "Albumcover geändert" : "Cover ist wieder automatisch das erste Foto");
+}
+
 async function deletePhotos(ids) {
   if (!ids.length) return;
   try {
@@ -664,6 +741,7 @@ async function deletePhotos(ids) {
   }
   const gone = new Set(ids);
   state.photos = state.photos.filter((p) => !gone.has(p.id));
+  if (state.album && gone.has(state.album.cover_id)) state.album.cover_id = state.photos.find((p) => p.has_preview)?.id ?? null;
   const albumId = state.album.id;
   toast(`${plural(ids.length, "Foto", "Fotos")} im Papierkorb`, {
     action: "Rückgängig",
@@ -862,6 +940,9 @@ function drawLightbox() {
       <div class="lb-actions">
         <button class="btn primary" data-lb="original">${icon("download")}Original laden</button>
         ${needsJpegCopy(p.filename) ? `<button class="btn" data-lb="jpeg">Als JPEG laden</button>` : ""}
+        ${p.has_preview ? (state.album?.cover_id === p.id
+          ? `<button class="btn" disabled>${icon("cover")}Ist das Cover</button>`
+          : `<button class="btn" data-lb="cover">${icon("cover")}Als Cover</button>`) : ""}
         <button class="btn danger" data-lb="delete">${icon("trash")}Löschen</button>
       </div>
     </div>`;
@@ -885,6 +966,10 @@ async function onLightboxClick(e) {
   if (act === "prev") step(-1);
   if (act === "next") step(1);
   if (act === "original") saveUrl(fileUrl(p.id, "original", true));
+  if (act === "cover") {
+    await chooseCover(p.id);
+    if (state.lb) { drawLightbox(); renderAlbumBody(); }
+  }
   if (act === "jpeg") {
     const t = progressToast("JPEG wird erstellt");
     try {
@@ -981,6 +1066,7 @@ async function renderTrash() {
   const drawBar = () => {
     bar.hidden = !selected.size;
     bar.innerHTML = `<span class="count">${plural(selected.size, "Foto", "Fotos")} ausgewählt</span><button class="btn primary" data-restore-photos>Wiederherstellen</button>`;
+    syncBarSpace();
   };
 
   app.onclick = async (e) => {

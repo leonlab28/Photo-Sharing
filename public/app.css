@@ -117,21 +117,53 @@ a { color: inherit; }
 .login .btn { min-height: 52px; }
 .form-error { color: var(--danger); margin: 12px 0 0; min-height: 1.5em; }
 
-/* ---------- who are you ---------- */
-.who { position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr; background: var(--ink); }
-.who header { padding: 18px var(--gutter); color: var(--pool); font-weight: 600; }
-.who-grid { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; gap: 0; }
-.who-tile {
-  position: relative; border: 0; padding: 18px; text-align: left;
-  display: flex; align-items: flex-end;
-  background: var(--c); color: var(--on);
-  transition: clip-path 0.5s cubic-bezier(.7,0,.2,1);
+/* ---------- who are you: pick your square inside the logo ---------- */
+/* The logo fills the screen; the hands reach in from the corners, the text sits in the free corners. */
+.who { position: relative; min-height: 100dvh; overflow: hidden; }
+.who-title {
+  position: absolute; z-index: 2; left: var(--gutter); top: calc(28px + env(safe-area-inset-top));
+  margin: 0; font-size: clamp(48px, 12vw, 96px); max-width: 60vw;
 }
-.who-tile span { font-family: var(--display); font-weight: 900; font-size: clamp(44px, 13vw, 168px); line-height: 0.85; }
-.who-tile:hover span, .who-tile:focus-visible span { text-decoration: underline; text-decoration-thickness: 0.06em; text-underline-offset: 0.12em; }
-.who-tile:focus-visible { outline-offset: -6px; outline-color: var(--on); }
+.who-hint {
+  position: absolute; z-index: 2; right: var(--gutter); bottom: calc(28px + env(safe-area-inset-bottom));
+  margin: 0; max-width: 24ch; text-align: right; color: var(--muted); font-size: clamp(15px, 1.3vw, 18px);
+}
+.who-stage {
+  --s: clamp(560px, min(152vw, 100dvh), 1000px);
+  position: absolute; left: 50%; top: 50%; width: var(--s); height: var(--s);
+  transform: translate(-50%, -50%); color: var(--ink);
+}
+.who-hands { position: absolute; inset: 0; width: 100%; height: 100%; fill: currentColor; }
+/* low screens (iPhone SE and similar): a bit smaller, so text and hands don't meet */
+@media (max-height: 720px) {
+  .who-stage { --s: clamp(480px, min(138vw, 92dvh), 1000px); }
+  .who-title { font-size: clamp(40px, 11vw, 72px); }
+  .who-hint { max-width: 19ch; font-size: 14px; }
+}
+/* The picture area of logo.svg: x 193.8..318.2, y 203.9..308.1 of 512, rotated -9 degrees. */
+.who-frame {
+  position: absolute; left: 37.86%; top: 39.82%; width: 24.28%; height: 20.35%;
+  transform: rotate(-9deg); display: grid; grid-template-columns: 1fr 1fr;
+  border-radius: calc(var(--s) * 0.026); overflow: hidden;
+}
+.who-frame.many { grid-auto-rows: 1fr; }
+.who-tile {
+  border: 0; padding: 4px; min-width: 0; background: var(--c); color: var(--on);
+  font-family: var(--display); font-weight: 800; font-size: calc(var(--s) * 0.031); line-height: 1;
+  display: flex; align-items: center; justify-content: center; overflow-wrap: anywhere;
+  transition: filter 0.15s ease;
+}
+.who-tile:hover { filter: brightness(1.1) saturate(1.05); }
+.who-tile:focus-visible { outline: 3px solid var(--on); outline-offset: -6px; }
 .who.picked .who-tile { pointer-events: none; }
-.who-expand { position: fixed; z-index: 5; background: var(--c); transition: all 0.48s cubic-bezier(.7,0,.2,1); }
+/* one entrance: the hands slide in and frame the four of us, then the names appear */
+.who-hands .hand-a { animation: hand-in-a 0.7s cubic-bezier(.2,.8,.2,1) both; }
+.who-hands .hand-b { animation: hand-in-b 0.7s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes hand-in-a { from { transform: translate(-70px, 70px); opacity: 0; } }
+@keyframes hand-in-b { from { transform: translate(70px, -70px); opacity: 0; } }
+.who-frame { animation: frame-in 0.45s ease-out 0.4s both; }
+@keyframes frame-in { from { opacity: 0; transform: rotate(-9deg) scale(0.92); } }
+.who-expand { position: fixed; inset: 0; z-index: 5; background: var(--c); transition: clip-path 0.5s cubic-bezier(.6,0,.3,1); }
 
 /* ---------- top bar ---------- */
 .bar {
@@ -250,6 +282,11 @@ a { color: inherit; }
   position: absolute; inset: 0; display: grid; place-items: center;
   font-family: var(--display); font-weight: 800; font-size: 30px; color: var(--muted);
 }
+.tile .cover-badge {
+  position: absolute; left: 6px; top: 6px; padding: 2px 9px; border-radius: 999px;
+  background: rgba(8, 16, 20, 0.62); color: #fff; font-size: 12px; font-weight: 700;
+}
+.selecting .tile .cover-badge { display: none; }
 .tile .check {
   position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; border-radius: 999px;
   border: 2px solid #fff; background: rgba(0, 0, 0, 0.25); display: none; place-items: center;
@@ -311,12 +348,11 @@ a { color: inherit; }
 
 /* ---------- uploads panel ---------- */
 #uploads {
-  position: fixed; z-index: 50; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom));
+  position: fixed; z-index: 50; right: 16px; bottom: calc(16px + var(--bar-space, 0px) + env(safe-area-inset-bottom));
   width: min(380px, calc(100vw - 32px)); padding: 16px;
   border-radius: 12px; background: var(--sheet); border: 1px solid var(--line);
   box-shadow: 0 24px 50px -24px rgba(10, 20, 26, 0.55);
 }
-.selecting-on #uploads { bottom: calc(84px + env(safe-area-inset-bottom)); }
 #uploads h4 { margin: 0 0 4px; font-size: 16px; }
 #uploads p { margin: 0 0 6px; color: var(--muted); font-size: 14px; }
 #uploads ul { list-style: none; margin: 10px 0 0; padding: 0; max-height: 160px; overflow: auto; font-size: 14px; }
@@ -329,7 +365,7 @@ a { color: inherit; }
 /* ---------- toasts ---------- */
 #toasts {
   position: fixed; left: 50%; transform: translateX(-50%); z-index: 90;
-  bottom: calc(20px + env(safe-area-inset-bottom)); display: grid; gap: 8px; width: min(440px, calc(100vw - 32px));
+  bottom: calc(20px + var(--bar-space, 0px) + env(safe-area-inset-bottom)); display: grid; gap: 8px; width: min(440px, calc(100vw - 32px));
 }
 .toast {
   display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 16px;
