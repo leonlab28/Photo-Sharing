@@ -1,23 +1,37 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="92 92 328 328">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="112 112 288 288">
   <style>
-    .ink { fill: #142229; stroke: #142229; }
-    @media (prefers-color-scheme: dark) { .ink { fill: #e4ecef; stroke: #e4ecef; } }
+    .ink { fill: #142229; }
+    @media (prefers-color-scheme: dark) { .ink { fill: #e4ecef; } }
   </style>
   <defs>
-    <!-- one hand, corner of the L at 0,0: index finger to the right, thumb up -->
-    <g id="hand" class="ink" stroke-linecap="round">
-      <path d="M0 0 H184" stroke-width="34" fill="none"/>
-      <path d="M0 0 V-160" stroke-width="38" fill="none"/>
-      <rect x="-50" y="-14" width="66" height="96" rx="28" stroke="none"/>
-      <path d="M-8 32 H36 M-8 56 H34 M-8 80 H28" stroke-width="24" fill="none"/>
-      <path d="M-26 64 L-66 122" stroke-width="70" fill="none"/>
-    </g>
+    <!-- One hand as a single shape. Corner of the L at 0,0: index finger points right, thumb up,
+         the web of skin between them is curved, curled fingers show as knuckles under the index. -->
+    <path id="hand" class="ink" d="
+      M -18 -150
+      A 17 17 0 0 1 16 -153
+      L 20 -54
+      Q 22 -18 54 -16
+      L 190 -14
+      A 16 16 0 0 1 190 18
+      L 62 22
+      C 80 24 82 46 63 51
+      C 80 55 80 76 61 80
+      C 76 84 74 103 55 107
+      C 40 114 24 118 14 122
+      L -2 156
+      A 32 32 0 0 1 -60 128
+      L -54 72
+      C -50 32 -42 2 -31 -30
+      Z"/>
   </defs>
-  <g transform="rotate(-9 256 256)">
-    <rect x="170" y="186" width="86" height="70" fill="#e0412f"/>
-    <rect x="256" y="186" width="86" height="70" fill="#0b8576"/>
-    <rect x="170" y="256" width="86" height="70" fill="#e3a008"/>
-    <rect x="256" y="256" width="86" height="70" fill="#4f3fd6"/>
+  <g transform="translate(256 256) scale(0.84) translate(-256 -256) rotate(-9 256 256)">
+    <clipPath id="pic"><rect x="182" y="194" width="148" height="124" rx="16"/></clipPath>
+    <g clip-path="url(#pic)">
+      <rect x="176" y="188" width="80" height="68" fill="#e0412f"/>
+      <rect x="256" y="188" width="80" height="68" fill="#0b8576"/>
+      <rect x="176" y="256" width="80" height="68" fill="#e3a008"/>
+      <rect x="256" y="256" width="80" height="68" fill="#4f3fd6"/>
+    </g>
     <use href="#hand" transform="translate(148 348)"/>
     <use href="#hand" transform="rotate(180 256 256) translate(148 348)"/>
   </g>
