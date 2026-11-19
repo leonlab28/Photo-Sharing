@@ -229,6 +229,7 @@ async function boot() {
 function renderLogin() {
   document.title = "Fotokiste";
   app.innerHTML = `<section class="login">
+    <img class="login-logo" src="/logo.svg" alt="" width="148" height="148">
     <h1 class="display">Fotokiste</h1>
     <p>Unsere Urlaubsfotos an einem Ort. Gib das Gruppenpasswort ein, das du bekommen hast.</p>
     <form>
@@ -298,7 +299,7 @@ function renderWho() {
 
 async function renderHome() {
   document.title = "Fotokiste";
-  app.innerHTML = `<header class="bar"><h1 class="title display">Fotokiste</h1>${meButton()}</header><div class="loading">Alben werden geladen.</div>`;
+  app.innerHTML = `<header class="bar"><h1 class="title display brand"><img class="brand-mark" src="/icon.svg" alt="">Fotokiste</h1>${meButton()}</header><div class="loading">Alben werden geladen.</div>`;
   bindMe(app);
   let albums;
   try {
