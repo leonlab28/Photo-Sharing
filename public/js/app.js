@@ -1,6 +1,7 @@
 import { api, fileUrl } from "./api.js";
 import { UploadQueue, bindVisibility } from "./upload.js";
 import { needsJpegCopy, jpegCopy, extOf } from "./imaging.js";
+import { openTinder } from "./tinder.js";
 import { canStreamToDisk, streamZipToDisk, zipToDownload, splitIntoParts, saveBlob, saveUrl } from "./download.js";
 
 const app = document.getElementById("app");
@@ -13,6 +14,7 @@ const state = {
   album: null,
   photos: [],
   filter: null, // uploader name or null for everyone
+  voting: false, // "Voting" filter: ranked by votes
   selecting: false,
   selected: new Set(),
   coverPick: false, // choosing an album cover by tapping a photo
@@ -54,6 +56,7 @@ const ICONS = {
   swap: '<path d="M7 7h11l-3-3M17 17H6l3 3"/>',
   out: '<path d="M14 5h5v14h-5M10 8l-4 4 4 4M6 12h10"/>',
   select: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
+  cards: '<rect x="7" y="3.5" width="12" height="15" rx="2" transform="rotate(8 13 11)"/><rect x="4" y="5.5" width="12" height="15" rx="2" transform="rotate(-6 10 13)"/>',
   cover: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 15.5l5-4.5 4 3.5 2.5-2 5.5 4.5"/><circle cx="15.5" cy="9.5" r="1.4"/>',
 };
 const icon = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
@@ -406,7 +409,15 @@ async function renderHome() {
 
 // ---------- album ----------
 
+const score = (p) => (p.ups || 0) - (p.downs || 0);
+
 function visiblePhotos() {
+  if (state.voting) {
+    // Most popular first: score, then most up-votes, then capture time.
+    return state.photos
+      .filter((p) => p.ups || p.downs)
+      .sort((a, b) => score(b) - score(a) || b.ups - a.ups || a.taken_at.localeCompare(b.taken_at));
+  }
   return state.filter ? state.photos.filter((p) => p.uploader === state.filter) : state.photos;
 }
 
@@ -423,7 +434,7 @@ async function renderAlbum(id, { keepScroll = false } = {}) {
     return;
   }
   if (location.hash !== `#/a/${id}`) return;
-  if (state.album?.id !== id) state.filter = null;
+  if (state.album?.id !== id) { state.filter = null; state.voting = false; }
   state.album = data.album;
   state.photos = data.photos;
   document.title = `${data.album.name} – Fotokiste`;
@@ -469,8 +480,10 @@ function renderAlbumBody() {
 
   const counts = Object.fromEntries(state.names.map((n) => [n, 0]));
   for (const p of photos) counts[p.uploader] = (counts[p.uploader] || 0) + 1;
+  const voted = photos.filter((p) => p.ups || p.downs).length;
   app.querySelector(".filters").innerHTML =
-    `<button class="chip all" aria-pressed="${!state.filter}" data-filter="">Alle <span class="n">${photos.length}</span></button>` +
+    `<button class="chip all" aria-pressed="${!state.filter && !state.voting}" data-filter="">Alle <span class="n">${photos.length}</span></button>` +
+    `<button class="chip voting" aria-pressed="${state.voting}" data-filter="__voting">Voting <span class="n">${voted}</span></button>` +
     state.names.map((n) =>
       `<button class="chip" style="${person(n)}" aria-pressed="${state.filter === n}" data-filter="${esc(n)}" ${counts[n] ? "" : "disabled"}><span class="dot"></span>${esc(n)} <span class="n">${counts[n]}</span></button>`
     ).join("");
@@ -481,6 +494,21 @@ function renderAlbumBody() {
     days.innerHTML = `<div class="page"><div class="empty-state"><h2 class="display">Noch leer</h2><p>Lade die ersten Fotos hoch. Du kannst sie auch einfach hier hineinziehen. Sie werden automatisch nach Aufnahmezeit sortiert.</p></div></div>`;
     return;
   }
+  // The hidden way into the photo voting, at the very bottom of every album.
+  const egg = photos.some((p) => p.has_preview)
+    ? `<div class="egg"><button class="egg-btn" data-act="tinder" aria-label="Foto-Voting" title="?">${icon("cards")}</button></div>`
+    : "";
+
+  if (state.voting) {
+    days.innerHTML = list.length
+      ? `<section class="day ranking">
+          <div class="day-head"><h3 class="display">Beliebteste Fotos</h3><span class="count">${plural(list.length, "Foto", "Fotos")} bewertet</span></div>
+          <div class="grid">${list.map((p, i) => tile(p, i)).join("")}</div>
+        </section>${egg}`
+      : `<div class="page"><div class="empty-state"><h2 class="display">Noch keine Stimmen</h2><p>Bewertet wird im versteckten Foto-Voting. Es liegt irgendwo ganz unten in diesem Album.</p></div></div>${egg}`;
+    return;
+  }
+
   const multiYear = photos[0].taken_at.slice(0, 4) !== photos[photos.length - 1].taken_at.slice(0, 4);
   const groups = [];
   for (const p of list) {
@@ -499,7 +527,7 @@ function renderAlbumBody() {
       </div>
       <div class="grid">${tiles}</div>
     </section>`;
-  }).join("");
+  }).join("") + egg;
 }
 
 function tile(p, index) {
@@ -510,7 +538,13 @@ function tile(p, index) {
   const isCover = state.album?.cover_id === p.id;
   return `<button class="tile${isCover ? " is-cover" : ""}" data-id="${p.id}" data-i="${index}" style="${person(p.uploader)}"
       aria-label="Foto von ${esc(p.uploader)}, ${when} Uhr" ${state.selecting ? `aria-pressed="${state.selected.has(p.id)}"` : ""}>
-      ${inner}${isCover ? '<span class="cover-badge">Cover</span>' : ""}<span class="check">${icon("check")}</span></button>`;
+      ${inner}${isCover && !state.voting ? '<span class="cover-badge">Cover</span>' : ""}${state.voting ? scoreBadge(p) : ""}<span class="check">${icon("check")}</span></button>`;
+}
+
+function scoreBadge(p) {
+  const s = score(p);
+  const cls = s > 0 ? "plus" : s < 0 ? "minus" : "even";
+  return `<span class="score ${cls}" title="${p.ups} hoch, ${p.downs} runter">${s > 0 ? "+" : s < 0 ? "−" : "±"}${Math.abs(s)}</span>`;
 }
 
 function setSelecting(on) {
@@ -605,7 +639,8 @@ function bindAlbum(id) {
       return;
     }
     if (chip) {
-      state.filter = chip.dataset.filter || null;
+      state.voting = chip.dataset.filter === "__voting";
+      state.filter = state.voting ? null : chip.dataset.filter || null;
       renderAlbumBody();
       return;
     }
@@ -643,6 +678,7 @@ function bindAlbum(id) {
         updateSelectBar();
         break;
       }
+      case "tinder": startTinder(); break;
       case "pick-cover":
         closeMenus();
         setSelecting(false);
@@ -711,6 +747,39 @@ function bindAlbum(id) {
     const files = [...e.dataTransfer.files];
     if (files.length) startUpload(files);
   };
+}
+
+function startTinder() {
+  const albumId = state.album.id;
+  setSelecting(false);
+  state.coverPick = false;
+  updateSelectBar();
+  openTinder({
+    photos: state.photos,
+    me: getMe(),
+    person,
+    when: (iso) => fmtDayYear.format(parseLocal(iso)),
+    onVote: (photo, value) => {
+      // Count it here right away; the server keeps one vote per person and photo.
+      const me = getMe();
+      const voters = (photo.voters || "").split("|").filter(Boolean);
+      if (!voters.includes(me)) {
+        voters.push(me);
+        if (value > 0) photo.ups = (photo.ups || 0) + 1;
+        else photo.downs = (photo.downs || 0) + 1;
+      }
+      photo.voters = voters.join("|");
+      return api.vote(photo.id, me, value).catch((e) => toast(`Stimme nicht gespeichert: ${e.message}`));
+    },
+    onRanking: () => {
+      state.voting = true;
+      state.filter = null;
+      if (location.hash === `#/a/${albumId}`) renderAlbumBody();
+    },
+    onClose: () => {
+      if (location.hash === `#/a/${albumId}`) renderAlbumBody();
+    },
+  });
 }
 
 async function chooseCover(photoId) {
@@ -935,7 +1004,7 @@ function drawLightbox() {
       <div class="lb-info">
         <span class="avatar" style="${person(p.uploader)}">${esc(p.uploader[0])}</span>
         <div><div class="who-line">${esc(p.uploader)}</div>
-          <div class="sub">${esc(whenText + timeNote)}<br>${esc(p.filename)}, ${fmtSize(p.size)}${p.width ? `, ${p.width} × ${p.height}` : ""}</div></div>
+          <div class="sub">${esc(whenText + timeNote)}<br>${esc(p.filename)}, ${fmtSize(p.size)}${p.width ? `, ${p.width} × ${p.height}` : ""}${p.ups || p.downs ? `<br>Voting: ${p.ups} hoch, ${p.downs} runter` : ""}</div></div>
       </div>
       <div class="lb-actions">
         <button class="btn primary" data-lb="original">${icon("download")}Original laden</button>

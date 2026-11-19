@@ -44,6 +44,7 @@ export const api = {
   completePhoto: (id, dims) => request("POST", `photos/${id}/complete`, dims || {}),
   deletePhotos: (ids, by) => request("POST", "photos/delete", { ids, by }),
   restorePhotos: (ids) => request("POST", "photos/restore", { ids }),
+  vote: (id, by, value) => request("POST", `photos/${id}/vote`, { by, value }),
 
   trash: () => request("GET", "trash"),
 };

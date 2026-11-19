@@ -37,6 +37,13 @@ const SCHEMA = [
      deleted_at INTEGER,
      deleted_by TEXT
    )`,
+  `CREATE TABLE IF NOT EXISTS votes (
+     photo_id TEXT NOT NULL,
+     voter TEXT NOT NULL,
+     value INTEGER NOT NULL,
+     created_at INTEGER NOT NULL,
+     PRIMARY KEY (photo_id, voter)
+   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS photos_album_hash ON photos(album_id, sha256)`,
   `CREATE INDEX IF NOT EXISTS photos_album_taken ON photos(album_id, status, deleted_at, taken_at)`,
   `CREATE INDEX IF NOT EXISTS photos_deleted ON photos(deleted_at)`,
@@ -165,6 +172,7 @@ async function route(request, env, url) {
   if (a === "photos") {
     if (b === "delete" && method === "POST") return deletePhotos(request, env);
     if (b === "restore" && method === "POST") return restorePhotos(request, env);
+    if (b && c === "vote" && method === "POST") return votePhoto(request, env, b);
     if (b && c === "complete" && method === "POST") return completePhoto(request, env, b);
     if (b && ["original", "preview", "thumb"].includes(c)) {
       if (method === "PUT") return putFile(request, env, b, c);
@@ -336,10 +344,15 @@ async function getAlbum(env, id) {
   const album = await env.DB.prepare(`SELECT a.*, ${COVER_SQL} AS effective_cover FROM albums a WHERE a.id = ?`).bind(id).first();
   if (!album || album.deleted_at) throw new HttpError(404, "Dieses Album gibt es nicht (mehr).");
   const { results } = await env.DB.prepare(
-    `SELECT id, uploader, filename, mime, size, taken_at, taken_src, width, height, has_preview
-       FROM photos
-      WHERE album_id = ? AND status = 'ready' AND deleted_at IS NULL
-      ORDER BY taken_at, filename`
+    `SELECT p.id, p.uploader, p.filename, p.mime, p.size, p.taken_at, p.taken_src, p.width, p.height, p.has_preview,
+            COALESCE(v.ups, 0) AS ups, COALESCE(v.downs, 0) AS downs, COALESCE(v.voters, '') AS voters
+       FROM photos p
+       LEFT JOIN (
+         SELECT photo_id, SUM(value = 1) AS ups, SUM(value = -1) AS downs, GROUP_CONCAT(voter, '|') AS voters
+           FROM votes GROUP BY photo_id
+       ) v ON v.photo_id = p.id
+      WHERE p.album_id = ? AND p.status = 'ready' AND p.deleted_at IS NULL
+      ORDER BY p.taken_at, p.filename`
   ).bind(id).all();
   return json({
     album: {
@@ -525,6 +538,27 @@ async function restorePhotos(request, env) {
   return json({ ok: true });
 }
 
+// ---------- voting ----------
+
+// One vote per person and photo: +1 (swiped right), -1 (left), 0 takes the vote back.
+async function votePhoto(request, env, id) {
+  const body = await readJson(request);
+  const voter = requireName(env, body.by);
+  const value = Number(body.value);
+  if (![1, -1, 0].includes(value)) throw new HttpError(400, "Ungültige Stimme.");
+  const photo = await loadPhoto(env, id);
+  if (photo.status !== "ready" || photo.deleted_at) throw new HttpError(404, "Dieses Foto gibt es nicht (mehr).");
+  if (value === 0) {
+    await env.DB.prepare(`DELETE FROM votes WHERE photo_id = ? AND voter = ?`).bind(id, voter).run();
+  } else {
+    await env.DB.prepare(
+      `INSERT INTO votes (photo_id, voter, value, created_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT (photo_id, voter) DO UPDATE SET value = excluded.value, created_at = excluded.created_at`
+    ).bind(id, voter, value, Date.now()).run();
+  }
+  return json({ ok: true });
+}
+
 // ---------- trash ----------
 
 async function listTrash(env) {
@@ -567,6 +601,9 @@ async function purge(env) {
       )
     );
   }
+
+  // Votes for photos that no longer exist.
+  await env.DB.prepare(`DELETE FROM votes WHERE photo_id NOT IN (SELECT id FROM photos)`).run();
 
   // Remove trashed albums whose photos are all gone now.
   await env.DB.prepare(
