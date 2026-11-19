@@ -84,6 +84,41 @@ function dateRange(first, last) {
 
 const safeFileName = (s) => s.replace(/[\/\\:*?"<>|\x00-\x1f]/g, "_").trim() || "Fotos";
 
+// ---------- runners: the four of us as a progress bar ----------
+
+// One stick figure in a 20x28 box. Limbs are separate groups so CSS can swing them.
+function runnerSvg(i) {
+  return `<svg class="runner" viewBox="0 0 20 28" style="--c:var(--p${i});--d:${[-0.05, -0.31, -0.18, -0.42][i]}s" aria-hidden="true">
+    <g class="bob">
+      <g class="limb arm-b"><polyline points="11.2,10.6 8.6,13.6 6.4,12.2"/></g>
+      <g class="limb leg-b"><polyline points="9.6,17 11.4,21.4 9.6,25.8"/></g>
+      <line x1="11.6" y1="9" x2="9.6" y2="17"/>
+      <circle cx="12.6" cy="4.8" r="3.1"/>
+      <g class="limb leg-a"><polyline points="9.6,17 11.4,21.4 9.6,25.8"/></g>
+      <g class="limb arm-a"><polyline points="11.2,10.6 13.6,13.6 16.2,12.4"/></g>
+      <g class="cheer"><polyline points="11.2,10.6 15,8.8 18.2,7.6"/><polyline points="11.2,10.6 8.2,8.4 5.8,6"/></g>
+    </g>
+  </svg>`;
+}
+
+/** Progress bar of four running stick figures. `mode` "loop" runs laps when progress is unknown. */
+function runners(mode = "") {
+  return `<div class="runners ${mode}" role="progressbar" aria-valuemin="0" aria-valuemax="100" ${mode === "loop" ? 'aria-label="Wird geladen"' : 'aria-valuenow="0"'} style="--p:0">
+    <div class="ground"><i></i></div>
+    <div class="pack">${[0, 1, 2, 3].map(runnerSvg).join("")}</div>
+  </div>`;
+}
+
+function setRunners(el, p) {
+  if (!el) return;
+  const v = Math.max(0, Math.min(1, p || 0));
+  el.style.setProperty("--p", v.toFixed(4));
+  el.setAttribute("aria-valuenow", String(Math.round(v * 100)));
+  el.classList.toggle("finished", v >= 1);
+}
+
+const loadingBlock = (text) => `<div class="loading">${runners("loop")}<p>${esc(text)}</p></div>`;
+
 // ---------- toasts ----------
 
 function toast(message, { action, onAction, timeout = 5000 } = {}) {
@@ -99,12 +134,12 @@ function toast(message, { action, onAction, timeout = 5000 } = {}) {
 
 function progressToast(label) {
   const el = document.createElement("div");
-  el.className = "toast";
-  el.innerHTML = `<span>${esc(label)}</span><div class="progress"><i></i></div>`;
+  el.className = "toast task";
+  el.innerHTML = `<span>${esc(label)}</span>${runners()}`;
   toastsEl.appendChild(el);
-  const bar = el.querySelector("i");
+  const bar = el.querySelector(".runners");
   return {
-    set(p) { bar.style.width = `${Math.round(p * 100)}%`; },
+    set(p) { setRunners(bar, p); },
     done(msg) { el.remove(); toast(msg); },
     fail(msg) { el.remove(); toast(msg, { timeout: 8000 }); },
     close() { el.remove(); },
@@ -299,7 +334,7 @@ function renderWho() {
 
 async function renderHome() {
   document.title = "Fotokiste";
-  app.innerHTML = `<header class="bar"><h1 class="title display brand"><img class="brand-mark" src="/icon.svg" alt="">Fotokiste</h1>${meButton()}</header><div class="loading">Alben werden geladen.</div>`;
+  app.innerHTML = `<header class="bar"><h1 class="title display brand"><img class="brand-mark" src="/icon.svg" alt="">Fotokiste</h1>${meButton()}</header>${loadingBlock("Alben werden geladen.")}`;
   bindMe(app);
   let albums;
   try {
@@ -358,7 +393,7 @@ function visiblePhotos() {
 async function renderAlbum(id, { keepScroll = false } = {}) {
   const scrollY = window.scrollY;
   if (!keepScroll) {
-    app.innerHTML = `<header class="bar"><a class="icon-btn back" href="#/" aria-label="Alle Alben">${icon("back")}</a><h1 class="title display"></h1></header><div class="loading">Album wird geladen.</div>`;
+    app.innerHTML = `<header class="bar"><a class="icon-btn back" href="#/" aria-label="Alle Alben">${icon("back")}</a><h1 class="title display"></h1></header>${loadingBlock("Album wird geladen.")}`;
   }
   let data;
   try {
@@ -660,11 +695,14 @@ queue.addEventListener("change", (e) => {
   if (!viewing) return;
   clearTimeout(refreshTimer);
   const due = !queue.active || done - lastRefreshDone >= 12;
-  refreshTimer = setTimeout(() => {
-    if (state.lb || state.selecting || location.hash !== `#/a/${albumId}`) return;
+  const refresh = () => {
+    if (location.hash !== `#/a/${albumId}`) return;
+    // Don't pull the rug out from under someone selecting or viewing a photo; try again shortly.
+    if (state.lb || state.selecting || document.querySelector("dialog[open]")) { refreshTimer = setTimeout(refresh, 1500); return; }
     lastRefreshDone = done;
     renderAlbum(albumId, { keepScroll: true });
-  }, due ? 300 : 4000);
+  };
+  refreshTimer = setTimeout(refresh, due ? 300 : 4000);
 });
 
 let panelQueued = false;
@@ -682,6 +720,10 @@ function renderUploadPanel() {
   if (s.total && !queue.active && !s.failed) panelHideTimer = setTimeout(() => { queue.items = []; renderUploadPanel(); }, 6000);
   if (!s.total) { uploadsEl.hidden = true; return; }
   uploadsEl.hidden = false;
+  // Build the frame once; afterwards only update it, so the runners keep their stride.
+  if (!uploadsEl.querySelector(".runners")) {
+    uploadsEl.innerHTML = `<h4></h4><p class="notes"></p>${runners()}<ul></ul><div class="row"></div>`;
+  }
   const finished = s.done + s.duplicate + s.restored + s.failed;
   const active = queue.active;
   const notes = [];
@@ -690,15 +732,18 @@ function renderUploadPanel() {
   if (s.failed) notes.push(`${plural(s.failed, "Foto", "Fotos")} nicht hochgeladen.`);
   if (active && matchMedia("(hover: none)").matches) notes.push("Lass den Bildschirm an, bis alles oben ist.");
   const failed = queue.items.filter((i) => i.state === "failed");
-  uploadsEl.innerHTML = `
-    <h4>${active ? `Hochladen: ${finished} von ${s.total}` : `${plural(s.done, "Foto", "Fotos")} hochgeladen`}</h4>
-    ${notes.length ? `<p>${esc(notes.join(" "))}</p>` : ""}
-    <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round((s.bytesDone / s.bytesTotal) * 100)}"><i style="width:${(s.bytesDone / s.bytesTotal) * 100}%"></i></div>
-    ${failed.length ? `<ul>${failed.map((i) => `<li><span>${esc(i.file.name)}</span><span class="err">${esc(i.error)}</span></li>`).join("")}</ul>` : ""}
-    <div class="row">
-      ${failed.length && !active ? `<button class="btn primary" data-up="retry">Nochmal versuchen</button>` : ""}
-      ${!active ? `<button class="btn" data-up="close">Schließen</button>` : ""}
-    </div>`;
+
+  uploadsEl.querySelector("h4").textContent = active ? `Hochladen: ${finished} von ${s.total}` : `${plural(s.done, "Foto", "Fotos")} hochgeladen`;
+  const notesEl = uploadsEl.querySelector(".notes");
+  notesEl.textContent = notes.join(" ");
+  notesEl.hidden = !notes.length;
+  setRunners(uploadsEl.querySelector(".runners"), s.bytesTotal ? s.bytesDone / s.bytesTotal : 0);
+  const list = uploadsEl.querySelector("ul");
+  list.innerHTML = failed.map((i) => `<li><span>${esc(i.file.name)}</span><span class="err">${esc(i.error)}</span></li>`).join("");
+  list.hidden = !failed.length;
+  uploadsEl.querySelector(".row").innerHTML =
+    (failed.length && !active ? `<button class="btn primary" data-up="retry">Nochmal versuchen</button>` : "") +
+    (!active ? `<button class="btn" data-up="close">Schließen</button>` : "");
 }
 uploadsEl.addEventListener("click", (e) => {
   const act = e.target.closest("[data-up]")?.dataset.up;
@@ -899,7 +944,7 @@ function bindSwipe(el) {
 
 async function renderTrash() {
   document.title = "Papierkorb – Fotokiste";
-  app.innerHTML = `<header class="bar"><a class="icon-btn back" href="#/" aria-label="Alle Alben">${icon("back")}</a><h1 class="title display">Papierkorb</h1>${meButton()}</header><div class="loading">Wird geladen.</div>`;
+  app.innerHTML = `<header class="bar"><a class="icon-btn back" href="#/" aria-label="Alle Alben">${icon("back")}</a><h1 class="title display">Papierkorb</h1>${meButton()}</header>${loadingBlock("Papierkorb wird geladen.")}`;
   bindMe(app);
   let data;
   try {
