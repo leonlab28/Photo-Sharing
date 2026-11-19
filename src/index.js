@@ -1,4 +1,7 @@
 // Photo sharing Worker: auth, albums, photos, trash. Files live in R2, metadata in D1.
+// The website itself (public/) is bundled into the Worker by scripts/build-site.mjs.
+
+import SITE from "./site.generated.js";
 
 const SESSION_COOKIE = "ps_session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 400; // 400 days, the browser maximum
@@ -65,7 +68,7 @@ const json = (data, status = 200, headers = {}) =>
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
+    if (!url.pathname.startsWith("/api/")) return serveSite(request, url);
     try {
       await ensureSchema(env);
       return await route(request, env, url);
@@ -80,6 +83,32 @@ export default {
     ctx.waitUntil(ensureSchema(env).then(() => purge(env)));
   },
 };
+
+// ---------- website ----------
+
+const decoded = new Map();
+function siteBody(file) {
+  if ("text" in file) return file.text;
+  if (!decoded.has(file.etag)) decoded.set(file.etag, Uint8Array.from(atob(file.base64), (c) => c.charCodeAt(0)));
+  return decoded.get(file.etag);
+}
+
+function serveSite(request, url) {
+  if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
+  const path = url.pathname === "/" ? "/index.html" : url.pathname;
+  const file = SITE[path];
+  if (!file) return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
+  const headers = {
+    "content-type": file.type,
+    etag: file.etag,
+    // Always revalidate, so a new deploy reaches everyone right away; unchanged files answer 304.
+    "cache-control": "no-cache",
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "same-origin",
+  };
+  if (request.headers.get("if-none-match") === file.etag) return new Response(null, { status: 304, headers });
+  return new Response(request.method === "HEAD" ? null : siteBody(file), { headers });
+}
 
 // ---------- routing ----------
 

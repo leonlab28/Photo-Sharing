@@ -3,12 +3,14 @@
   "name": "photo-sharing",
   "main": "src/index.js",
   "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "preview_urls": false,
 
-  // The website (HTML, CSS, JS) lives in /public. Requests to /api/* go to the Worker.
-  "assets": {
-    "directory": "./public",
-    "binding": "ASSETS",
-    "run_worker_first": ["/api/*"]
+  // The website (HTML, CSS, JS) lives in /public and is packed into the Worker before
+  // every deploy and dev run. See scripts/build-site.mjs for why.
+  "build": {
+    "command": "node scripts/build-site.mjs",
+    "watch_dir": "public"
   },
 
   // Photo files. The bucket "photos" already exists in the Cloudflare account.
@@ -16,9 +18,9 @@
     { "binding": "BUCKET", "bucket_name": "photos" }
   ],
 
-  // Albums, uploader, capture date, trash. Created automatically on the first deploy.
+  // Albums, uploader, capture date, trash. Tables are created by the Worker itself.
   "d1_databases": [
-    { "binding": "DB", "database_name": "photo-sharing-db" }
+    { "binding": "DB", "database_name": "photo-sharing-db", "database_id": "073e022b-6c63-45eb-9485-22fc482910d8" }
   ],
 
   // Once a day: empty trash older than 30 days, remove abandoned uploads.

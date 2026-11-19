@@ -14,13 +14,17 @@ A private photo box for our vacations. Everyone opens one link, types the group 
 - **Trash**: anyone can delete anything, but deleted photos and albums stay restorable for 30 days, then are removed automatically.
 - **No location shown or stored.** Note: the original files keep whatever GPS data the phone wrote, because the files are never modified.
 
-## Setup (one time, about 15 minutes)
+## Live
 
-You need a free Cloudflare account and this GitHub repository.
+**https://photo-sharing.leon-roesch28.workers.dev** (Worker `photo-sharing`, R2 bucket `photos`, D1 database `photo-sharing-db`).
+
+To deploy changes from a terminal with a Cloudflare API token: `npx wrangler deploy`. The website files are packed into the Worker automatically before every deploy.
+
+## Setup from scratch (for a new Cloudflare account)
 
 1. **Enable R2.** In the Cloudflare dashboard open *R2 Object Storage* and activate it. Cloudflare asks for a payment method even for the free tier (10 GB free, after that about $0.015 per GB per month).
 2. **Connect the repository.** Dashboard → *Workers & Pages* → *Create* → *Import a repository* → connect GitHub → pick `Photo-Sharing`. Leave the build command empty and the deploy command as `npx wrangler deploy`. Deploy.
-   The first deploy creates the storage bucket (`photo-sharing-photos`) and the database (`photo-sharing-db`) automatically.
+   The first deploy creates the database (`photo-sharing-db`) automatically. Create an R2 bucket named `photos` beforehand, or change `bucket_name` in `wrangler.jsonc`. After the first deploy, put the new database's ID into `database_id` in `wrangler.jsonc`.
 3. **Set the group password.** Open the new Worker → *Settings* → *Variables and Secrets* → *Add* → type **Secret**, name `APP_PASSWORD`, value: the password you will give your friends. Save.
 4. **Open the site** at the `…workers.dev` address shown on the Worker's page. Send that link and the password to the group.
 
@@ -43,7 +47,7 @@ From then on, every change pushed to the main branch goes live by itself.
 
 | Part | Where |
 |---|---|
-| Website (HTML, CSS, JS, no build step) | `public/` |
+| Website (HTML, CSS, JS) | `public/`, packed into the Worker by `scripts/build-site.mjs` on every deploy |
 | API: login, albums, uploads, trash, daily cleanup | `src/index.js` (Cloudflare Worker) |
 | Photo files | Cloudflare R2 |
 | Albums, uploader, capture time, trash | Cloudflare D1 (SQLite) |
