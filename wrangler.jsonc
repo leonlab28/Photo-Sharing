@@ -1,0 +1,36 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "photo-sharing",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+
+  // The website (HTML, CSS, JS) lives in /public. Requests to /api/* go to the Worker.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+
+  // Photo files. Created automatically on the first deploy.
+  "r2_buckets": [
+    { "binding": "BUCKET", "bucket_name": "photo-sharing-photos" }
+  ],
+
+  // Albums, uploader, capture date, trash. Created automatically on the first deploy.
+  "d1_databases": [
+    { "binding": "DB", "database_name": "photo-sharing-db" }
+  ],
+
+  // Once a day: empty trash older than 30 days, remove abandoned uploads.
+  "triggers": { "crons": ["17 3 * * *"] },
+
+  "vars": {
+    // The name tiles on the start screen. Comma separated, in this order.
+    "NAMES": "Niklas,Laurens,Andreas,Leon",
+    "TRASH_DAYS": "30"
+  }
+
+  // The group password is a secret, not stored here.
+  // Set it in the Cloudflare dashboard: Worker -> Settings -> Variables and Secrets
+  // -> Add -> type "Secret", name APP_PASSWORD.
+}
