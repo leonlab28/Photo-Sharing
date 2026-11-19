@@ -110,6 +110,9 @@ export class UploadQueue extends EventTarget {
       putFile(init.id, "original", file, (loaded, total) => {
         item.progress = loaded / total;
         this.emit();
+      }).catch((e) => {
+        // 409: the original already arrived on an earlier attempt whose answer got lost.
+        if (e.status !== 409) throw e;
       })
     );
     await withRetry(() => api.completePhoto(init.id, { width: r.width, height: r.height }));
