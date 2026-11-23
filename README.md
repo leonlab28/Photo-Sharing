@@ -8,6 +8,7 @@ A private photo box for our vacations. Everyone opens one link, types the group 
 - **Previews** are made in the browser at upload time: JPEG, PNG, WebP, AVIF, GIF directly; HEIC (iPhone) and TIFF via bundled decoders; camera RAW (DNG, CR2, CR3, NEF, ARW, RAF, ORF, RW2 …) via the full-size preview the camera embeds in the file. Formats without a preview still upload and download normally.
 - **Sorted by capture time** (camera clock), grouped by day. Files without capture data use the file date.
 - **No duplicates**: the exact same file uploaded twice into one album is skipped.
+- **Private albums**: an album can be listed for one name only and need its own password, entered once per browser.
 - **Filter by person**: who uploaded what. Each person has a signature color, shown on the filter and as an edge on their photos.
 - **Albums**, one level, no nested folders.
 - **Download**: a single photo (original, plus a JPEG copy for HEIC/TIFF/RAW), a selection, or a whole album as ZIP. ZIP files contain the untouched originals, named `2026-07-14 09.12.00 Leon IMG_1000.JPG` so they sort by time in any folder.
@@ -34,6 +35,7 @@ From then on, every change pushed to the main branch goes live by itself.
 
 - **Names on the start screen:** `NAMES` in `wrangler.jsonc` (comma separated, up to four get distinct colors).
 - **Trash duration:** `TRASH_DAYS` in `wrangler.jsonc`.
+- **Private album with its own password:** `node scripts/album-lock.mjs "Name" Leon <password>` prints an SQL line; run it with `npx wrangler d1 execute photo-sharing-db --remote --command "<that line>"`. The album then appears only for that name, and opening it asks for the password once per browser. Its photos stay blocked on the server for any browser that has not entered it. Names are not accounts: anyone with the group password can tap that name and see that the album exists, so the album password is the real protection.
 - **Locking everyone out:** change `APP_PASSWORD`. All existing logins stop working immediately.
 
 ## Limits worth knowing

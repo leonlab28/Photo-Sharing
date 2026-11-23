@@ -57,6 +57,7 @@ const ICONS = {
   out: '<path d="M14 5h5v14h-5M10 8l-4 4 4 4M6 12h10"/>',
   select: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
   cover: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 15.5l5-4.5 4 3.5 2.5-2 5.5 4.5"/><circle cx="15.5" cy="9.5" r="1.4"/>',
+  lock: '<rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>',
 };
 // Two-tone flame for the photo voting: tomato outside, sun-yellow core.
 const FLAME = `<svg class="flame" viewBox="0 0 24 24" aria-hidden="true">
@@ -365,7 +366,7 @@ async function renderHome() {
   bindMe(app);
   let albums;
   try {
-    ({ albums } = await api.albums());
+    ({ albums } = await api.albums(getMe()));
   } catch (e) {
     app.querySelector(".loading").textContent = e.message;
     return;
@@ -376,9 +377,11 @@ async function renderHome() {
     const cover = a.cover_id
       ? `<img src="${fileUrl(a.cover_id, "preview")}" alt="" loading="lazy" decoding="async">`
       : "";
-    const meta = a.count ? `${dateRange(a.first_taken, a.last_taken)}, ${plural(a.count, "Foto", "Fotos")}` : "Noch keine Fotos";
+    const meta = a.locked ? "Mit Passwort geschützt"
+      : a.count ? `${dateRange(a.first_taken, a.last_taken)}, ${plural(a.count, "Foto", "Fotos")}` : "Noch keine Fotos";
+    const lock = a.private || a.locked ? `<span class="album-lock" title="Nur für dich sichtbar, mit Passwort">${icon("lock")}</span>` : "";
     return `<article class="album">
-      <a class="album-cover${a.cover_id ? "" : " empty"}" href="#/a/${a.id}">${cover}<h2 class="display">${esc(a.name)}</h2></a>
+      <a class="album-cover${a.cover_id ? "" : " empty"}${a.locked ? " locked" : ""}" href="#/a/${a.id}">${cover}${lock}<h2 class="display">${esc(a.name)}</h2></a>
       <div class="album-meta"><p>${esc(meta)}</p>
         ${a.count ? `<button class="icon-btn" data-dl="${a.id}" data-name="${esc(a.name)}" aria-label="${esc(a.name)} komplett herunterladen" title="Album herunterladen">${icon("download")}</button>` : ""}
       </div>
@@ -434,6 +437,7 @@ async function renderAlbum(id, { keepScroll = false } = {}) {
   try {
     data = await api.album(id);
   } catch (e) {
+    if (e.status === 423 && location.hash === `#/a/${id}`) return renderUnlock(id);
     app.innerHTML = `<header class="bar"><a class="icon-btn back" href="#/" aria-label="Alle Alben">${icon("back")}</a></header><div class="loading">${esc(e.message)}</div>`;
     return;
   }
@@ -473,6 +477,41 @@ async function renderAlbum(id, { keepScroll = false } = {}) {
   renderAlbumBody();
   bindAlbum(id);
   if (keepScroll) window.scrollTo(0, scrollY);
+}
+
+// A locked album asks for its own password once; the browser remembers it after that.
+function renderUnlock(id) {
+  document.title = "Gesperrtes Album – Fotokiste";
+  app.innerHTML = `<header class="bar"><a class="icon-btn back" href="#/" aria-label="Alle Alben">${icon("back")}</a></header>
+    <section class="login unlock">
+      <span class="unlock-icon">${icon("lock")}</span>
+      <h1 class="display">Gesperrt</h1>
+      <p>Dieses Album hat ein eigenes Passwort. Auf diesem Gerät musst du es nur einmal eingeben.</p>
+      <form>
+        <label class="sr" for="album-pw">Albumpasswort</label>
+        <input id="album-pw" class="field" type="password" autocomplete="off" placeholder="Albumpasswort" required>
+        <button class="btn primary">Öffnen</button>
+      </form>
+      <p class="form-error" role="alert"></p>
+    </section>`;
+  const form = app.querySelector("form");
+  const err = app.querySelector(".form-error");
+  const input = form.querySelector("#album-pw");
+  input.focus();
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector("button");
+    btn.disabled = true;
+    err.textContent = "";
+    try {
+      await api.unlockAlbum(id, input.value);
+      renderAlbum(id);
+    } catch (ex) {
+      err.textContent = ex.message;
+      btn.disabled = false;
+      input.select();
+    }
+  };
 }
 
 function renderAlbumBody() {

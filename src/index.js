@@ -50,7 +50,12 @@ const SCHEMA = [
 ];
 
 // Columns added after the first release. Adding one that exists fails harmlessly.
-const MIGRATIONS = [`ALTER TABLE albums ADD COLUMN cover_id TEXT`];
+// owner: the album is only listed for this name. lock_hash: opening it needs its own password.
+const MIGRATIONS = [
+  `ALTER TABLE albums ADD COLUMN cover_id TEXT`,
+  `ALTER TABLE albums ADD COLUMN owner TEXT`,
+  `ALTER TABLE albums ADD COLUMN lock_hash TEXT`,
+];
 
 let schemaReady = null;
 function ensureSchema(env) {
@@ -83,6 +88,8 @@ class HttpError extends Error {
     this.status = status;
   }
 }
+
+const LOCKED = "Dieses Album ist mit einem eigenen Passwort geschützt.";
 
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), {
@@ -160,12 +167,13 @@ async function route(request, env, url) {
   if (!authed) throw new HttpError(401, "Bitte gib das Gruppenpasswort ein.");
 
   if (a === "albums") {
-    if (!b && method === "GET") return listAlbums(env);
+    if (!b && method === "GET") return listAlbums(request, env, url);
     if (!b && method === "POST") return createAlbum(request, env);
-    if (b && !c && method === "GET") return getAlbum(env, b);
+    if (b && !c && method === "GET") return getAlbum(request, env, b);
     if (b && !c && method === "PATCH") return updateAlbum(request, env, b);
     if (b && !c && method === "DELETE") return deleteAlbum(request, env, b);
-    if (b && c === "restore" && method === "POST") return restoreAlbum(env, b);
+    if (b && c === "restore" && method === "POST") return restoreAlbum(request, env, b);
+    if (b && c === "unlock" && method === "POST") return unlockAlbum(request, env, b);
     if (b && c === "photos" && method === "POST") return initPhoto(request, env, b);
   }
 
@@ -180,7 +188,7 @@ async function route(request, env, url) {
     }
   }
 
-  if (a === "trash" && method === "GET") return listTrash(env);
+  if (a === "trash" && method === "GET") return listTrash(request, env);
 
   throw new HttpError(404, "Nicht gefunden.");
 }
@@ -218,19 +226,88 @@ async function makeToken(env) {
   return `${issued}.${await hmac(env.APP_PASSWORD, "session.v1." + issued)}`;
 }
 
-async function isAuthed(request, env) {
+function readCookie(request, name) {
   const cookie = request.headers.get("cookie") || "";
-  const match = cookie.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`));
-  if (!match) return false;
-  const [issued, sig] = match[1].split(".");
+  const match = cookie.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
+  return match ? match[1] : null;
+}
+
+async function isAuthed(request, env) {
+  const value = readCookie(request, SESSION_COOKIE);
+  if (!value) return false;
+  const [issued, sig] = value.split(".");
   if (!issued || !sig) return false;
   const age = Date.now() - parseInt(issued, 36);
   if (!(age >= 0 && age < SESSION_MAX_AGE * 1000)) return false;
   return safeEqual(sig, await hmac(env.APP_PASSWORD, "session.v1." + issued));
 }
 
-function cookieHeader(value, maxAge) {
-  return `${SESSION_COOKIE}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
+function cookieHeader(value, maxAge, name = SESSION_COOKIE) {
+  return `${name}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
+}
+
+// ---------- album locks ----------
+// A locked album needs its own password once per browser. The unlock cookie is signed
+// with the group password and the album's password hash, so changing either one locks
+// every browser out again.
+
+const PBKDF2_ITERATIONS = 100000; // the most Workers allow
+
+const b64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)));
+const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+async function pbkdf2(password, salt, iterations) {
+  const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
+  return crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations }, key, 256);
+}
+
+// Stored as pbkdf2$<iterations>$<salt base64>$<hash base64>.
+async function checkAlbumPassword(lockHash, password) {
+  const [scheme, iter, salt, hash] = String(lockHash).split("$");
+  if (scheme !== "pbkdf2" || !salt || !hash) return false;
+  const given = b64(await pbkdf2(String(password || ""), unb64(salt), Number(iter) || PBKDF2_ITERATIONS));
+  return safeEqual(given, hash);
+}
+
+const unlockCookieName = (albumId) => `ps_unlock_${albumId}`;
+const unlockSig = (env, album, issued) => hmac(`${env.APP_PASSWORD}|${album.lock_hash}`, `unlock.v1.${album.id}.${issued}`);
+
+async function unlockCookie(env, album) {
+  const issued = Date.now().toString(36);
+  return cookieHeader(`${issued}.${await unlockSig(env, album, issued)}`, SESSION_MAX_AGE, unlockCookieName(album.id));
+}
+
+/** album needs id and lock_hash. */
+async function canOpen(request, env, album) {
+  if (!album.lock_hash) return true;
+  const value = readCookie(request, unlockCookieName(album.id));
+  if (!value) return false;
+  const [issued, sig] = value.split(".");
+  if (!issued || !sig) return false;
+  return safeEqual(sig, await unlockSig(env, album, issued));
+}
+
+async function requireOpen(request, env, album) {
+  if (!(await canOpen(request, env, album))) throw new HttpError(423, LOCKED);
+}
+
+/** Ids of locked albums this browser has not unlocked. */
+async function closedAlbumIds(request, env) {
+  const { results } = await env.DB.prepare(`SELECT id, lock_hash FROM albums WHERE lock_hash IS NOT NULL`).all();
+  const closed = [];
+  for (const album of results) if (!(await canOpen(request, env, album))) closed.push(album.id);
+  return closed;
+}
+
+async function unlockAlbum(request, env, id) {
+  const album = await loadAlbum(env, id, { allowDeleted: true });
+  if (!album.lock_hash) return json({ ok: true });
+  const { password } = await readJson(request);
+  if (!(await checkAlbumPassword(album.lock_hash, password))) {
+    await new Promise((r) => setTimeout(r, 600)); // slow down guessing
+    throw new HttpError(403, "Falsches Albumpasswort.");
+  }
+  return json({ ok: true }, 200, { "set-cookie": await unlockCookie(env, album) });
 }
 
 async function login(request, env) {
@@ -306,9 +383,10 @@ function contentDisposition(type, filename) {
 
 // ---------- albums ----------
 
-async function listAlbums(env) {
+async function listAlbums(request, env, url) {
+  const viewer = url.searchParams.get("as") || "";
   const { results } = await env.DB.prepare(
-    `SELECT a.id, a.name, a.created_at, a.created_by,
+    `SELECT a.id, a.name, a.created_at, a.created_by, a.owner, a.lock_hash,
             COUNT(p.id) AS count,
             MIN(p.taken_at) AS first_taken,
             MAX(p.taken_at) AS last_taken,
@@ -316,11 +394,18 @@ async function listAlbums(env) {
             COALESCE(SUM(p.size), 0) AS bytes
        FROM albums a
        LEFT JOIN photos p ON p.album_id = a.id AND p.status = 'ready' AND p.deleted_at IS NULL
-      WHERE a.deleted_at IS NULL
+      WHERE a.deleted_at IS NULL AND (a.owner IS NULL OR a.owner = ?)
       GROUP BY a.id
       ORDER BY COALESCE(MAX(p.taken_at), '') DESC, a.created_at DESC`
-  ).all();
-  return json({ albums: results });
+  ).bind(viewer).all();
+  const albums = [];
+  for (const { lock_hash, owner, ...a } of results) {
+    a.private = !!owner;
+    a.locked = !(await canOpen(request, env, { id: a.id, lock_hash }));
+    // A closed album shows nothing but its name.
+    albums.push(a.locked ? { id: a.id, name: a.name, private: a.private, locked: true, count: 0, bytes: 0 } : a);
+  }
+  return json({ albums });
 }
 
 async function createAlbum(request, env) {
@@ -340,9 +425,10 @@ async function loadAlbum(env, id, { allowDeleted = false } = {}) {
   return album;
 }
 
-async function getAlbum(env, id) {
+async function getAlbum(request, env, id) {
   const album = await env.DB.prepare(`SELECT a.*, ${COVER_SQL} AS effective_cover FROM albums a WHERE a.id = ?`).bind(id).first();
   if (!album || album.deleted_at) throw new HttpError(404, "Dieses Album gibt es nicht (mehr).");
+  await requireOpen(request, env, album);
   const { results } = await env.DB.prepare(
     `SELECT p.id, p.uploader, p.filename, p.mime, p.size, p.taken_at, p.taken_src, p.width, p.height, p.has_preview,
             COALESCE(v.ups, 0) AS ups, COALESCE(v.downs, 0) AS downs, COALESCE(v.voters, '') AS voters
@@ -358,13 +444,15 @@ async function getAlbum(env, id) {
     album: {
       id: album.id, name: album.name, created_at: album.created_at, created_by: album.created_by,
       cover_id: album.effective_cover, cover_chosen: album.cover_id === album.effective_cover && !!album.cover_id,
+      private: !!album.owner, locked: !!album.lock_hash,
     },
     photos: results,
-  });
+    // Every visit renews the unlock, so it only expires after 400 days without opening the album.
+  }, 200, album.lock_hash ? { "set-cookie": await unlockCookie(env, album) } : {});
 }
 
 async function updateAlbum(request, env, id) {
-  await loadAlbum(env, id);
+  await requireOpen(request, env, await loadAlbum(env, id));
   const body = await readJson(request);
   if ("name" in body) {
     const name = String(body.name || "").trim().slice(0, 120);
@@ -385,15 +473,15 @@ async function updateAlbum(request, env, id) {
 }
 
 async function deleteAlbum(request, env, id) {
-  await loadAlbum(env, id);
+  await requireOpen(request, env, await loadAlbum(env, id));
   const body = await readJson(request);
   const by = requireName(env, body.by);
   await env.DB.prepare(`UPDATE albums SET deleted_at = ?, deleted_by = ? WHERE id = ?`).bind(Date.now(), by, id).run();
   return json({ ok: true });
 }
 
-async function restoreAlbum(env, id) {
-  await loadAlbum(env, id, { allowDeleted: true });
+async function restoreAlbum(request, env, id) {
+  await requireOpen(request, env, await loadAlbum(env, id, { allowDeleted: true }));
   await env.DB.prepare(`UPDATE albums SET deleted_at = NULL, deleted_by = NULL WHERE id = ?`).bind(id).run();
   return json({ ok: true });
 }
@@ -403,7 +491,7 @@ async function restoreAlbum(env, id) {
 const TAKEN_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
 
 async function initPhoto(request, env, albumId) {
-  await loadAlbum(env, albumId);
+  await requireOpen(request, env, await loadAlbum(env, albumId));
   const body = await readJson(request);
   const uploader = requireName(env, body.uploader);
   const sha256 = String(body.sha256 || "").toLowerCase();
@@ -442,14 +530,18 @@ async function initPhoto(request, env, albumId) {
   return json({ id, state: "new" });
 }
 
-async function loadPhoto(env, id) {
-  const photo = await env.DB.prepare(`SELECT * FROM photos WHERE id = ?`).bind(id).first();
+// Also checks that this browser may open the photo's album.
+async function loadPhoto(request, env, id) {
+  const photo = await env.DB.prepare(
+    `SELECT p.*, a.lock_hash AS album_lock FROM photos p LEFT JOIN albums a ON a.id = p.album_id WHERE p.id = ?`
+  ).bind(id).first();
   if (!photo) throw new HttpError(404, "Dieses Foto gibt es nicht (mehr).");
+  await requireOpen(request, env, { id: photo.album_id, lock_hash: photo.album_lock });
   return photo;
 }
 
 async function putFile(request, env, id, kind) {
-  const photo = await loadPhoto(env, id);
+  const photo = await loadPhoto(request, env, id);
   const length = Number(request.headers.get("content-length"));
   if (!request.body || !Number.isSafeInteger(length) || length <= 0) throw new HttpError(411, "Dateigröße fehlt.");
 
@@ -480,7 +572,7 @@ async function putFile(request, env, id, kind) {
 }
 
 async function completePhoto(request, env, id) {
-  const photo = await loadPhoto(env, id);
+  const photo = await loadPhoto(request, env, id);
   if (photo.status === "ready") return json({ ok: true });
   const body = await request.json().catch(() => ({}));
   const head = await env.BUCKET.head(keyFor(photo.album_id, id, "original"));
@@ -492,7 +584,7 @@ async function completePhoto(request, env, id) {
 }
 
 async function getFile(request, env, id, kind, url) {
-  const photo = await loadPhoto(env, id);
+  const photo = await loadPhoto(request, env, id);
   const object = await env.BUCKET.get(keyFor(photo.album_id, id, kind), {
     onlyIf: request.headers,
   });
@@ -519,9 +611,11 @@ async function deletePhotos(request, env) {
   const ids = Array.isArray(body.ids) ? body.ids.filter((x) => typeof x === "string").slice(0, 5000) : [];
   if (!ids.length) throw new HttpError(400, "Keine Fotos ausgewählt.");
   const now = Date.now();
-  const stmts = chunk(ids, 90).map((part) =>
-    env.DB.prepare(`UPDATE photos SET deleted_at = ?, deleted_by = ? WHERE deleted_at IS NULL AND id IN (${part.map(() => "?").join(",")})`)
-      .bind(now, by, ...part)
+  const closed = await closedAlbumIds(request, env);
+  const notClosed = closed.length ? ` AND album_id NOT IN (${closed.map(() => "?").join(",")})` : "";
+  const stmts = chunk(ids, 80).map((part) =>
+    env.DB.prepare(`UPDATE photos SET deleted_at = ?, deleted_by = ? WHERE deleted_at IS NULL AND id IN (${part.map(() => "?").join(",")})${notClosed}`)
+      .bind(now, by, ...part, ...closed)
   );
   await env.DB.batch(stmts);
   return json({ ok: true, count: ids.length });
@@ -531,8 +625,11 @@ async function restorePhotos(request, env) {
   const body = await readJson(request);
   const ids = Array.isArray(body.ids) ? body.ids.filter((x) => typeof x === "string").slice(0, 5000) : [];
   if (!ids.length) throw new HttpError(400, "Keine Fotos ausgewählt.");
-  const stmts = chunk(ids, 95).map((part) =>
-    env.DB.prepare(`UPDATE photos SET deleted_at = NULL, deleted_by = NULL WHERE id IN (${part.map(() => "?").join(",")})`).bind(...part)
+  const closed = await closedAlbumIds(request, env);
+  const notClosed = closed.length ? ` AND album_id NOT IN (${closed.map(() => "?").join(",")})` : "";
+  const stmts = chunk(ids, 80).map((part) =>
+    env.DB.prepare(`UPDATE photos SET deleted_at = NULL, deleted_by = NULL WHERE id IN (${part.map(() => "?").join(",")})${notClosed}`)
+      .bind(...part, ...closed)
   );
   await env.DB.batch(stmts);
   return json({ ok: true });
@@ -546,7 +643,7 @@ async function votePhoto(request, env, id) {
   const voter = requireName(env, body.by);
   const value = Number(body.value);
   if (![1, -1, 0].includes(value)) throw new HttpError(400, "Ungültige Stimme.");
-  const photo = await loadPhoto(env, id);
+  const photo = await loadPhoto(request, env, id);
   if (photo.status !== "ready" || photo.deleted_at) throw new HttpError(404, "Dieses Foto gibt es nicht (mehr).");
   if (value === 0) {
     await env.DB.prepare(`DELETE FROM votes WHERE photo_id = ? AND voter = ?`).bind(id, voter).run();
@@ -561,7 +658,9 @@ async function votePhoto(request, env, id) {
 
 // ---------- trash ----------
 
-async function listTrash(env) {
+async function listTrash(request, env) {
+  // Locked albums this browser has not opened stay out of the trash list, photos included.
+  const closed = new Set(await closedAlbumIds(request, env));
   const albums = await env.DB.prepare(
     `SELECT a.id, a.name, a.deleted_at, a.deleted_by,
             (SELECT COUNT(*) FROM photos p WHERE p.album_id = a.id AND p.status = 'ready' AND p.deleted_at IS NULL) AS count,
@@ -574,7 +673,11 @@ async function listTrash(env) {
       WHERE p.deleted_at IS NOT NULL AND p.status = 'ready' AND a.deleted_at IS NULL
       ORDER BY p.deleted_at DESC LIMIT 2000`
   ).all();
-  return json({ albums: albums.results, photos: photos.results, days: trashDays(env) });
+  return json({
+    albums: albums.results.filter((a) => !closed.has(a.id)),
+    photos: photos.results.filter((p) => !closed.has(p.album_id)),
+    days: trashDays(env),
+  });
 }
 
 // ---------- daily cleanup ----------

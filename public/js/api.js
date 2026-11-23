@@ -60,7 +60,8 @@ export const api = {
   login: (password) => request("POST", "login", { password }),
   logout: () => request("POST", "logout", {}),
 
-  albums: () => request("GET", "albums"),
+  albums: (as) => request("GET", `albums?as=${encodeURIComponent(as || "")}`),
+  unlockAlbum: (id, password) => request("POST", `albums/${id}/unlock`, { password }),
   album: (id) => request("GET", `albums/${id}`),
   createAlbum: (name, by) => request("POST", "albums", { name, by }),
   renameAlbum: (id, name) => request("PATCH", `albums/${id}`, { name }),

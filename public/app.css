@@ -224,6 +224,15 @@ a { color: inherit; }
   color: #fff; font-size: clamp(40px, 9vw, 64px); overflow-wrap: anywhere;
 }
 .album-cover.empty h2 { color: var(--ink); }
+.album-lock {
+  position: absolute; top: 12px; right: 12px; z-index: 2;
+  display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%;
+  background: var(--ink); color: var(--sheet);
+}
+.album-lock svg { width: 18px; height: 18px; }
+.unlock-icon { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: var(--ink); color: var(--sheet); margin-bottom: 18px; }
+.unlock-icon svg { width: 30px; height: 30px; }
+.unlock h1 { font-size: clamp(56px, 16vw, 112px); }
 .album-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
 .album-meta p { margin: 0; color: var(--muted); font-size: 15px; }
 .empty-state { padding: 48px 0; max-width: 40ch; }
