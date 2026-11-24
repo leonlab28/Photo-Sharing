@@ -1,0 +1,302 @@
+<title>Inlay Lettering</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
+<style>
+/* Layout: sticky preview on the left, a long control rail on the right; stacks on phones. */
+:root {
+  --bg: #F5F3EE; --panel: #FFFFFF; --fg: #1B1F1D; --muted: #5F6762; --line: #DEDAD1;
+  --accent: #1E3A32; --accent-fg: #FFFFFF; --warn: #9A4A12; --warn-bg: #FBEEDF;
+  --display: 'Space Grotesk', 'Inter', system-ui, sans-serif; --body: 'Inter', system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121614; --panel: #1A1F1C; --fg: #E8ECE9; --muted: #9AA39E; --line: #2C332F;
+  --accent: #9CC7B6; --accent-fg: #0F1412; --warn: #F2B27A; --warn-bg: #2B2016; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #121614; --panel: #1A1F1C; --fg: #E8ECE9; --muted: #9AA39E; --line: #2C332F;
+  --accent: #9CC7B6; --accent-fg: #0F1412; --warn: #F2B27A; --warn-bg: #2B2016; color-scheme: dark }
+* { box-sizing: border-box }
+[hidden] { display: none !important }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 14px; line-height: 1.45 }
+.wrap { max-width: 1440px; margin: 0 auto; padding-block: 24px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start }
+.stage { flex: 999 1 560px; min-width: 0; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); display: flex; flex-direction: column; gap: 12px }
+.rail { flex: 1 1 340px; min-width: 0; display: flex; flex-direction: column; gap: 16px }
+header h1 { margin: 0; font-family: var(--display); font-weight: 600; font-size: 26px; letter-spacing: -0.01em; text-wrap: balance }
+header p { margin: 4px 0 0; color: var(--muted); max-width: 62ch }
+.preview { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; min-height: 240px; max-height: 72vh }
+.preview svg { display: block; width: 100%; height: auto; max-height: 72vh }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums }
+.warn { background: var(--warn-bg); color: var(--warn); border-radius: 6px; padding: 10px 12px; font-size: 13px }
+.warn ul { margin: 4px 0 0; padding-left: 18px }
+section.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 12px }
+section.card h2 { margin: 0; font-family: var(--display); font-weight: 500; font-size: 16px }
+.hint { color: var(--muted); font-size: 12px; margin: -6px 0 0 }
+label.f { display: grid; grid-template-columns: 96px minmax(0, 1fr) 52px; gap: 10px; align-items: center; font-size: 13px }
+label.f output { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted) }
+label.f output.set { color: var(--fg); font-weight: 600 }
+input[type=range] { width: 100%; accent-color: var(--accent) }
+input[type=text], input[type=number], select { width: 100%; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 7px 9px }
+input[type=text]:focus-visible, input[type=number]:focus-visible, select:focus-visible, button:focus-visible, input[type=range]:focus-visible, input[type=checkbox]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.row2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px }
+.row2 > label, .stack { display: flex; flex-direction: column; gap: 4px; font-size: 13px }
+.chk { display: flex; gap: 8px; align-items: center; font-size: 13px }
+.units { display: flex; flex-direction: column; gap: 10px }
+.unit { border: 1px solid var(--line); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 8px }
+.unit-h { display: flex; justify-content: space-between; align-items: center }
+.unit-h b { font-family: var(--display); font-size: 18px; letter-spacing: 0.04em }
+.unit-h b span { color: var(--muted); font-weight: 500 }
+button { font: inherit; font-weight: 500; border-radius: 5px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); padding: 8px 12px; cursor: pointer; min-height: 40px }
+button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent) }
+button.small { min-height: 32px; padding: 4px 10px; font-size: 12px }
+.btns { display: flex; flex-wrap: wrap; gap: 8px }
+.swatches { display: flex; flex-wrap: wrap; gap: 8px }
+.sw { display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 6px; font-size: 12px }
+.sw i { width: 28px; height: 20px; border-radius: 3px; display: inline-block; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12) }
+.sw[aria-pressed="true"] { border-color: var(--fg) }
+.colors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px }
+.colors label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted) }
+input[type=color] { width: 100%; height: 36px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); padding: 2px }
+.status { font-size: 12px; color: var(--muted); min-height: 1em }
+code { font-size: 12px }
+@media (max-width: 720px) { .stage { position: static } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important } }
+</style>
+
+<div class="wrap">
+  <div class="stage">
+    <header>
+      <h1>Inlay Lettering</h1>
+      <p>Each guest letter takes the exact shape of its host's counter. Every gap is the same width. Strokes stay fixed while proportions change.</p>
+    </header>
+    <div class="preview" id="preview" aria-live="polite"></div>
+    <div class="meta" id="meta"></div>
+    <div class="warn" id="warn" hidden></div>
+  </div>
+
+  <div class="rail">
+    <section class="card">
+      <h2>Word and pairs</h2>
+      <div class="stack"><label for="word">Word</label><input type="text" id="word" autocomplete="off" spellcheck="false"></div>
+      <div class="stack"><label for="pairs">Pairs (host + guest, separated by spaces)</label><input type="text" id="pairs" autocomplete="off" spellcheck="false"></div>
+      <p class="hint" id="planInfo"></p>
+    </section>
+
+    <section class="card">
+      <h2>System</h2>
+      <label class="f" for="gap">Gap<input type="range" id="gap" min="4" max="36" step="1"><output id="gapO"></output></label>
+      <label class="f" for="S">Outer stroke<input type="range" id="S" min="16" max="96" step="1"><output id="SO"></output></label>
+      <label class="f" for="T">Inner stroke<input type="range" id="T" min="8" max="80" step="1"><output id="TO"></output></label>
+      <p class="hint">Units: one row's cap height is 360.</p>
+    </section>
+
+    <section class="card">
+      <h2>Format</h2>
+      <div class="row2">
+        <label for="aspect">Box ratio (W:H)
+          <select id="aspect">
+            <option value="free">Free</option><option value="1:1">1:1</option><option value="3:4">3:4</option><option value="4:3">4:3</option>
+            <option value="4:5">4:5</option><option value="2:3">2:3</option><option value="9:16">9:16</option><option value="16:9">16:9</option>
+            <option value="3:1">3:1</option><option value="custom">Custom</option>
+          </select>
+        </label>
+        <label for="rows">Rows<select id="rows"><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+      </div>
+      <div class="row2" id="customRatio" hidden>
+        <label for="aw">Width<input type="number" id="aw" min="0.1" step="0.1"></label>
+        <label for="ah">Height<input type="number" id="ah" min="0.1" step="0.1"></label>
+      </div>
+      <label class="chk" for="rotate"><input type="checkbox" id="rotate"> Turn 90° (read top to bottom)</label>
+    </section>
+
+    <section class="card">
+      <h2>Letters</h2>
+      <p class="hint">A blank value follows the system. Outer stroke grows inwards; width and height squeeze the guest without thinning it.</p>
+      <div class="units" id="units"></div>
+    </section>
+
+    <section class="card">
+      <h2>Colour</h2>
+      <div class="swatches" id="ways"></div>
+      <div class="colors">
+        <label for="cOuter">Outer<input type="color" id="cOuter"></label>
+        <label for="cInner">Inner<input type="color" id="cInner"></label>
+        <label for="cBg">Ground<input type="color" id="cBg"></label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Export</h2>
+      <div class="btns">
+        <button class="primary" id="dlSvg" type="button">Download SVG</button>
+        <button id="dlSvgT" type="button">SVG without ground</button>
+        <button id="dlSpec" type="button">Download spec</button>
+        <button id="cpSpec" type="button">Copy spec</button>
+      </div>
+      <p class="status" id="status"></p>
+      <p class="hint">The spec is a small JSON file. Hand it to Claude to rebuild or refine this exact setting.</p>
+    </section>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.min.js"></script>
+<script>
+/*__NEST__*/
+</script>
+<script>
+(function () {
+  const WAYS = {
+    'Pine & Brass': { outer: '#1E3A32', inner: '#A9823A', bg: '#F3EFE6' },
+    'Midnight Frost': { outer: '#E8EDF2', inner: '#8FB0D6', bg: '#141B2D' },
+    'Oxblood & Sand': { outer: '#5C1F22', inner: '#B8875A', bg: '#F4ECE2' },
+    'Pine reverse': { outer: '#F3EFE6', inner: '#C9A35A', bg: '#1E3A32' },
+    'Ink': { outer: '#16161A', inner: '#16161A', bg: '#FFFFFF' },
+  };
+  const DEF = { word: 'DEZEMBER', pairs: 'DE ZE MB ER', gap: 12, S: 44, T: 36, aspect: 'free', aw: 3, ah: 4, rows: 1, rotate: false,
+    units: {}, way: 'Pine & Brass', colors: Object.assign({}, WAYS['Pine & Brass']) };
+  let st;
+  try { st = Object.assign({}, DEF, JSON.parse(localStorage.getItem('inlay-lettering') || '{}')); } catch (e) { st = Object.assign({}, DEF); }
+  const save = () => { try { localStorage.setItem('inlay-lettering', JSON.stringify(st)); } catch (e) {} };
+  const $ = (id) => document.getElementById(id);
+  let lastRes = null;
+
+  function parsePairs(txt) {
+    return txt.toUpperCase().trim().split(/\s+/).filter(Boolean).map((g) => g.replace(/[^A-Z]/g, ''))
+      .filter(Boolean).map((g) => [g[0], g[1] || null]);
+  }
+  function ratio() {
+    if (st.aspect === 'free') return null;
+    if (st.aspect === 'custom') return st.aw > 0 && st.ah > 0 ? st.aw / st.ah : null;
+    const [a, b] = st.aspect.split(':').map(Number); return a / b;
+  }
+  function spec() {
+    const units = parsePairs(st.pairs), outer = {}, inner = {};
+    units.forEach((u, i) => {
+      const o = st.units[i] || {};
+      const po = {}; if (o.S != null) po.S = o.S; if (o.wf != null) po.wf = o.wf / 100; if (o.hf != null) po.hf = o.hf / 100;
+      if (Object.keys(po).length) outer[i] = po;
+      if (o.T != null && u[1]) inner[i] = { T: o.T };
+    });
+    return { units, gap: st.gap, S: st.S, T: st.T, aspect: ratio(), rows: Math.min(st.rows, units.length || 1), rotate: st.rotate,
+      outer, inner, colors: { bg: st.colors.bg, outer: st.colors.outer, inner: st.colors.inner } };
+  }
+
+  // ---------- per-letter controls ----------
+  function slider(i, key, label, min, max, step, fallback, unit) {
+    const o = st.units[i] || {}, v = o[key];
+    const id = `u${i}${key}`;
+    return `<label class="f" for="${id}">${label}<input type="range" id="${id}" data-i="${i}" data-k="${key}" min="${min}" max="${max}" step="${step}" value="${v ?? fallback}"><output id="${id}O" class="${v != null ? 'set' : ''}">${v != null ? v + unit : 'auto'}</output></label>`;
+  }
+  function buildUnits() {
+    const units = parsePairs(st.pairs);
+    $('units').innerHTML = units.map((u, i) => `
+      <div class="unit">
+        <div class="unit-h"><b>${u[0]}${u[1] ? '<span>·' + u[1] + '</span>' : ''}</b><button class="small" type="button" data-reset="${i}">Reset</button></div>
+        ${slider(i, 'S', 'Outer stroke', 16, 110, 1, st.S, '')}
+        ${slider(i, 'wf', 'Width', 40, 180, 1, 100, '%')}
+        ${slider(i, 'hf', 'Height', 40, 100, 1, 100, '%')}
+        ${u[1] ? slider(i, 'T', 'Inner stroke', 8, 90, 1, st.T, '') : ''}
+      </div>`).join('');
+  }
+  $('units').addEventListener('input', (e) => {
+    const el = e.target; if (!el.dataset.k) return;
+    const i = el.dataset.i, k = el.dataset.k, v = Number(el.value);
+    st.units[i] = Object.assign({}, st.units[i], { [k]: v });
+    const out = $(el.id + 'O'); out.textContent = v + (k === 'wf' || k === 'hf' ? '%' : ''); out.className = 'set';
+    schedule();
+  });
+  $('units').addEventListener('click', (e) => {
+    const i = e.target.dataset && e.target.dataset.reset; if (i == null) return;
+    delete st.units[i]; buildUnits(); schedule();
+  });
+
+  // ---------- global controls ----------
+  function syncGlobal() {
+    $('word').value = st.word; $('pairs').value = st.pairs;
+    for (const k of ['gap', 'S', 'T']) { $(k).value = st[k]; $(k + 'O').textContent = st[k]; }
+    $('aspect').value = st.aspect; $('rows').value = String(st.rows); $('rotate').checked = st.rotate;
+    $('aw').value = st.aw; $('ah').value = st.ah; $('customRatio').hidden = st.aspect !== 'custom';
+    $('cOuter').value = st.colors.outer; $('cInner').value = st.colors.inner; $('cBg').value = st.colors.bg;
+    $('ways').innerHTML = Object.entries(WAYS).map(([n, c]) =>
+      `<button class="sw" type="button" data-way="${n}" aria-pressed="${st.way === n}"><i style="background:linear-gradient(90deg, ${c.bg} 0 34%, ${c.outer} 34% 67%, ${c.inner} 67%)"></i>${n}</button>`).join('');
+  }
+  function planInfo() {
+    const p = Nest.plan(st.word);
+    const txt = p.units.map((u) => u.host + (u.guest || '') + (u.guest ? ` (${u.score})` : '')).join(' · ');
+    $('planInfo').textContent = 'Suggested: ' + txt + (p.missing.length ? '. Not built yet: ' + p.missing.join(', ') + '. Ask Claude to add them.' : '');
+    return p;
+  }
+  $('word').addEventListener('input', () => {
+    st.word = $('word').value.toUpperCase();
+    const p = planInfo();
+    st.pairs = p.units.map((u) => u.host + (u.guest || '')).join(' ');
+    $('pairs').value = st.pairs; st.units = {}; buildUnits(); schedule();
+  });
+  $('pairs').addEventListener('input', () => { st.pairs = $('pairs').value.toUpperCase(); st.units = {}; buildUnits(); schedule(); });
+  for (const k of ['gap', 'S', 'T']) $(k).addEventListener('input', () => {
+    st[k] = Number($(k).value); $(k + 'O').textContent = st[k];
+    if (k !== 'gap') buildUnits();
+    schedule();
+  });
+  $('aspect').addEventListener('change', () => { st.aspect = $('aspect').value; $('customRatio').hidden = st.aspect !== 'custom'; schedule(); });
+  $('aw').addEventListener('input', () => { st.aw = Number($('aw').value); schedule(); });
+  $('ah').addEventListener('input', () => { st.ah = Number($('ah').value); schedule(); });
+  $('rows').addEventListener('change', () => { st.rows = Number($('rows').value); schedule(); });
+  $('rotate').addEventListener('change', () => { st.rotate = $('rotate').checked; schedule(); });
+  $('ways').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-way]'); if (!b) return;
+    st.way = b.dataset.way; st.colors = Object.assign({}, WAYS[st.way]); syncGlobal(); schedule();
+  });
+  for (const [id, k] of [['cOuter', 'outer'], ['cInner', 'inner'], ['cBg', 'bg']]) $(id).addEventListener('input', () => {
+    st.colors[k] = $(id).value; st.way = null;
+    document.querySelectorAll('[data-way]').forEach((b) => b.setAttribute('aria-pressed', 'false'));
+    schedule();
+  });
+
+  // ---------- render ----------
+  let pending = 0;
+  function schedule() { cancelAnimationFrame(pending); pending = requestAnimationFrame(() => setTimeout(render, 0)); save(); }
+  function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+  function render() {
+    const sp = spec(), warn = $('warn');
+    if (!sp.units.length) { $('preview').innerHTML = ''; return; }
+    try {
+      const t0 = performance.now();
+      const res = Nest.layout(sp); lastRes = res;
+      const pad = Math.round(Math.max(res.width, res.height) * 0.06);
+      $('preview').style.background = st.colors.bg;
+      $('preview').innerHTML = Nest.toSVG(res, { bg: st.colors.bg, outer: st.colors.outer, inner: st.colors.inner, pad })
+        .replace('<svg ', '<svg role="img" aria-label="' + esc(st.word) + '" preserveAspectRatio="xMidYMid meet" ');
+      const r = res.width / res.height;
+      $('meta').innerHTML = `<span>Box ${res.width.toFixed(0)} × ${res.height.toFixed(0)}</span><span>Ratio ${r >= 1 ? r.toFixed(2) + ' : 1' : '1 : ' + (1 / r).toFixed(2)}</span>` +
+        `<span>${res.units.map((u) => u.host + (u.guest || '') + ' ' + u.w.toFixed(0)).join(' · ')}</span><span>${(performance.now() - t0).toFixed(0)} ms</span>`;
+      warn.hidden = !res.warnings.length;
+      warn.innerHTML = res.warnings.length ? '<b>Check these</b><ul>' + res.warnings.map((w) => '<li>' + esc(w) + '</li>').join('') + '</ul>' : '';
+    } catch (e) {
+      lastRes = null; warn.hidden = false; warn.innerHTML = '<b>Cannot build this</b><ul><li>' + esc(e.message) + '</li></ul>';
+    }
+  }
+
+  // ---------- export ----------
+  let downloads = null;
+  if (window.claude && window.claude.use) window.claude.use('downloads').then((d) => { downloads = d; }).catch(() => {});
+  const status = (t) => { $('status').textContent = t; };
+  const fname = (ext) => (st.word || 'lettering').toLowerCase().replace(/[^a-z0-9]+/g, '-') + ext;
+  async function offer(filename, data) {
+    if (!downloads) { status('Downloads are not available in this view. Use Copy spec instead.'); return; }
+    try { await downloads.save({ filename, data }); status('Saved ' + filename); }
+    catch (e) { status(e && e.code === 'declined' ? 'Download cancelled.' : 'Could not save: ' + (e && e.message || 'unknown error')); }
+  }
+  $('dlSvg').addEventListener('click', () => lastRes && offer(fname('.svg'), Nest.toSVG(lastRes, { bg: st.colors.bg, outer: st.colors.outer, inner: st.colors.inner, pad: Math.round(lastRes.height * 0.08) })));
+  $('dlSvgT').addEventListener('click', () => lastRes && offer(fname('-transparent.svg'), Nest.toSVG(lastRes, { outer: st.colors.outer, inner: st.colors.inner })));
+  $('dlSpec').addEventListener('click', () => offer(fname('-spec.json'), JSON.stringify(spec(), null, 1)));
+  $('cpSpec').addEventListener('click', async () => {
+    const txt = JSON.stringify(spec());
+    try { await navigator.clipboard.writeText(txt); status('Spec copied. Paste it into the chat with Claude.'); }
+    catch (e) { status('Copy was blocked. Spec: ' + txt); }
+  });
+
+  syncGlobal(); planInfo(); buildUnits(); render();
+})();
+</script>

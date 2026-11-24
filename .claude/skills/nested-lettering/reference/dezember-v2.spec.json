@@ -1,0 +1,7 @@
+{
+ "units": [["D","E"],["Z","E"],["M","B"],["E","R"]],
+ "capH": 360, "gap": 12, "S": 44, "T": 36,
+ "aspect": null, "rows": 1, "rotate": false,
+ "outer": {}, "inner": {},
+ "colors": {"bg": "#F3EFE6", "outer": "#1E3A32", "inner": "#A9823A"}
+}

@@ -1,0 +1,13 @@
+{
+  "name": "nested-lettering-engine",
+  "version": "1.0.0",
+  "description": "Parametric nested-lettering engine",
+  "main": "nest.js",
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "polygon-clipping": "^0.15.7"
+  },
+  "type": "commonjs"
+}
