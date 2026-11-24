@@ -195,11 +195,46 @@
       w0: 220,
       build(o) {
         const { w, h, S, g } = o;
-        const m1 = o.hosting ? (o.waist ?? 0.244) * h : (h - S) / 2;
+        const m1 = o.waist != null ? o.waist * h : o.hosting ? 0.244 * h : (h - S) / 2;
         const shape = P([[0, 0], [w, 0], [w, S], [S, S], [S, m1], [w, m1], [w, m1 + S], [S, m1 + S],
           [S, h - S], [w, h - S], [w, h], [0, h]]);
         const top = m1 + S + g, bot = h - S - g;
         return { shape, region: bot - top > 4 ? rect(S + g, top, w, bot) : null };
+      },
+    },
+    N: {
+      w0: 300,
+      build(o) {
+        const { w, h, S, g } = o;
+        const Sd = o.diag ?? S * 0.955;
+        let d = Sd;                                // horizontal width of the diagonal
+        for (let i = 0; i < 60; i++) d = (Sd * Math.hypot(w - d, h)) / h;
+        const shape = pc.union(rect(0, 0, S, h), rect(w - S, 0, w, h), P([[0, 0], [d, 0], [w, h], [w - d, h]]));
+        // lower-left counter: right of the left stem, below the diagonal, open at the baseline
+        const vx = w - d, vy = h, L = Math.hypot(vx, vy);
+        const nx = -vy / L, ny = vx / L;           // normal pointing down-left, away from the band
+        const c = -(nx * 0 + ny * 0) - g;          // through the band's lower-left edge (0,0)-(w-d,h)
+        const reg = clipHalf([[S + g, 0], [w - S - g, 0], [w - S - g, h], [S + g, h]], nx, ny, c);
+        return { shape, region: reg.length > 2 ? P(reg) : null };
+      },
+    },
+    V: {
+      w0: 320,
+      build(o) {
+        const { w, h, S, g } = o;
+        const Sd = o.diag ?? S * 0.955, c = w / 2, bw = o.tip ?? S * 0.9;   // flat tip at the baseline
+        // outer edges: (0,0)->(c-bw/2,h) and mirror; arm band horizontal width dx at the top
+        const ox = c - bw / 2, L0 = Math.hypot(ox, h);
+        const dx = (Sd * L0) / h;
+        // inner edges: (dx,0) parallel to the outer edge; meet on the axis
+        const yv = Math.min(h - 1, (h * (c - dx)) / ox);
+        const shape = P([[0, 0], [dx, 0], [c, yv], [w - dx, 0], [w, 0], [c + bw / 2, h], [c - bw / 2, h]]);
+        // counter between the arms, inset by g, open (flush) at the cap line
+        const nx = h / L0, ny = -ox / L0;          // normal of the left inner edge pointing right/up into the counter
+        const cl = -(nx * dx + ny * 0) - g;
+        let reg = clipHalf([[0, 0], [w, 0], [w, h], [0, h]], nx, ny, cl);
+        reg = clipHalf(reg, -nx, ny, -(-nx * (w - dx) + ny * 0) - g);
+        return { shape, region: reg.length > 2 ? P(reg) : null };
       },
     },
     L: {
@@ -249,6 +284,20 @@
       const cut = pc.intersection(pc.union(band(x0, x1, y0 - 2, mid - T / 2), band(x0, x1, mid + T / 2, y1 + 2)), shifted, rightStemShift(region, T));
       return pc.difference(MP(region), cut);
     },
+    V(region, o) {
+      const [x0, y0, x1, y1] = bbox(region), T = o.T, H = y1 - y0;
+      const [l, r] = xRange(region, y0 + H * 0.4), xc = (l + r) / 2;
+      const tipT = T * (o.tip ?? 1.35);           // the round bottom reads thin, so it is drawn heavier
+      const ay = y1 - tipT;                        // apex of the notch
+      // half-width of the notch at height y0+0.35H so that the arm there is one stroke wide
+      const yr = y0 + H * 0.35, [lr] = xRange(region, yr);
+      let s = (xc - lr - T) / (ay - yr);
+      for (let i = 0; i < 30; i++) { const Th = T * Math.sqrt(1 + s * s); s = Math.max(0.05, (xc - lr - Th) / (ay - yr)); }
+      const half = s * (ay - y0 + 2);
+      if (half < T) o.warn('V: region too narrow, notch closes');
+      const notch = P([[xc - half, y0 - 2], [xc + half, y0 - 2], [xc, ay]]);
+      return pc.difference(MP(region), notch);
+    },
     B(region, o) {
       const [x0, y0, x1, y1] = bbox(region), T = o.T, H = y1 - y0;
       const yw = y0 + H * (o.waist ?? 0.47);       // upper bowl slightly smaller
@@ -286,7 +335,7 @@
     A: ['tri', 0.4], B: ['rect', 0.3], C: ['round', 0.8], D: ['round', 1], E: ['rect', 0.8], F: ['rect', 0.6], G: ['round', 0.6],
     H: ['rect', 0.6], I: ['none', 0], J: ['rect', 0.3], K: ['tri', 0.4], L: ['rect', 0.9], M: ['vnotch', 0.8], N: ['tri', 0.6],
     O: ['round', 0.9], P: ['rect', 0.5], Q: ['round', 0.8], R: ['rect', 0.4], S: ['none', 0.2], T: ['rect', 0.4], U: ['rect', 0.8],
-    V: ['tri', 0.6], W: ['tri', 0.5], X: ['tri', 0.3], Y: ['tri', 0.4], Z: ['tri', 0.7],
+    V: ['vtri', 0.6], W: ['vtri', 0.5], X: ['tri', 0.3], Y: ['tri', 0.4], Z: ['tri', 0.7],
   };
   const GUEST = { // how well a letter survives being squeezed into a foreign shape (0..1) and its build class
     E: [1, 'straight'], F: [1, 'straight'], L: [0.95, 'straight'], I: [0.9, 'straight'], T: [0.85, 'straight'], H: [0.85, 'straight'],
@@ -295,13 +344,14 @@
     G: [0.45, 'round'], J: [0.6, 'round'], S: [0.4, 'round'], X: [0.4, 'diag'], W: [0.3, 'diag'], Q: [0.35, 'round'],
   };
   const COMPAT = {
-    round: { straight: 1, bowl: 0.8, round: 0.9, diag: 0.5 },
+    round: { straight: 1, bowl: 0.8, round: 0.9, diag: 0.7 },   // a V or W guest is only a notch, so round hosts suit it
     rect: { straight: 1, bowl: 1, round: 0.7, diag: 0.7 },
     tri: { straight: 0.85, bowl: 0.5, round: 0.3, diag: 0.8 },
+    vtri: { straight: 0.4, bowl: 0.3, round: 0.4, diag: 0.8 },   // apex at the bottom: a guest's lower arm vanishes into the point
     vnotch: { straight: 0.8, bowl: 0.9, round: 0.6, diag: 0.6 },
     none: { straight: 0, bowl: 0, round: 0, diag: 0 },
   };
-  const SOLO = 0.25;
+  const SOLO = 0.12;   // low on purpose: the brief is to fuse as much as possible
   function pairScore(h, g) {
     const H = HOST[h], G = GUEST[g];
     if (!H || !G) return 0;
@@ -382,7 +432,10 @@
     const buildOuter = (i, k, rowY) => {
       const u = units[i], p = params[i], h = capH * p.hf;
       const w = OUTER[u.host].w0 * (capH / 360) * k * p.wf;
-      const geo = OUTER[u.host].build(Object.assign({}, p.po, { w, h, S: p.S, g, hosting: !!u.guest }));
+      const po = Object.assign({}, p.po);
+      // one E per word: a solo E takes the raised waist of an E that hosts
+      if (u.host === 'E' && !u.guest && po.waist == null && units.some((v) => v.host === 'E' && v.guest)) po.waist = 0.244;
+      const geo = OUTER[u.host].build(Object.assign(po, { w, h, S: p.S, g, hosting: !!u.guest }));
       return { w, h, dy: rowY + capH - h, geo };
     };
     // place one row for a given width factor k; returns positions and the row width

@@ -16,7 +16,8 @@ The engine in `engine/` builds this exactly and fast. Use it, do not hand-comput
 3. **Two stroke weights.** Outer stroke `S` (default 44) and inner stroke `T` (default 36). The guest is relatively heavier so it holds up small. Z's diagonal is about 95% of `S` because diagonals look heavier.
 4. **Strokes are absolute.** Changing a letter's width or height, or the box ratio, never changes a stroke. A thicker host grows inwards: its outer size stays and its guest gets squeezed without thinning.
 5. **Reading order is sacred.** A host only holds the letter right after it.
-6. **Colour separates the two layers**: outer letters in one colour, guests in an accent. In one colour it must still read, which the gap guarantees down to its minimum size.
+6. **One shape per letter per word.** If one E hosts (raised waist), a solo E in the same word takes the same waist. The engine does this automatically.
+7. **Colour separates the two layers**: outer letters in one colour, guests in an accent. In one colour it must still read, which the gap guarantees down to its minimum size.
 
 Approved reference: `reference/dezember-v2-approved.svg` (exact arcs, from `reference/dezember-v2-geometry.py`) and `reference/dezember-v2.spec.json` (the same setting for the engine).
 
@@ -64,9 +65,11 @@ Strokes are fixed, so a box ratio has a floor. When a row gets too narrow the en
 Every letter has a **host profile** (type and room of its best counter) and a **guest profile** (how well it survives being squeezed, and its build class). The full table is in `engine/nest.js` (`HOST`, `GUEST`, `COMPAT`); `reference/letters.md` explains it.
 
 - score(host, guest) = room × squeezability × compatibility(counter type, guest class)
-- A solo letter scores 0.25, so a pair has to be worth more than two solo letters.
+- A solo letter scores 0.12 (low on purpose: the brief is to fuse as much as possible).
 - Best hosts: D, O, Q, L, U, E (lower counter), M (under the V), C, Z (lower triangle).
 - Best guests: straight letters E, F, L, I, T, H; then the bowl letters B, R, P. Round guests (O, C, S, G) need round or wide counters. Diagonal guests (A, V, W, X, Z) only work in triangles.
+- Triangles with the point at the bottom (V, W) are poor hosts: the guest's lower arm vanishes. V and W are good guests in round counters, because they are only a notch (NOVEMBER: O·V, not V·E).
+- A host's empty counter is a hole in a fused word: prefer pairings that fill the big counters (O, D) over ones that fill small triangles.
 - Never host with I, S or J. A word with an odd count, or a letter no host can hold, keeps solo letters, which is fine.
 - Weigh the sketch, the meaning and the rhythm over the score: prefer pairings that give units of similar width.
 

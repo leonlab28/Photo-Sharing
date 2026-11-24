@@ -25,8 +25,8 @@ Room: how much usable counter the letter offers as a host (0–1). Squeeze: how 
 | S | none | 0.2 | round | 0.4 | Avoid as host and as guest. |
 | T | rect, under the arms | 0.4 | straight | 0.85 | Two narrow counters. |
 | U | rect, open top | 0.8 | round | 0.7 | |
-| V | triangle, open top | 0.6 | diagonal | 0.5 | |
-| W | triangles | 0.5 | diagonal | 0.3 | |
+| V | triangle, point down | 0.6 | diagonal | 0.5 | Poor host: a guest's lower arm vanishes into the point (NOVEMBER test). Good guest in round counters: it is just a notch. |
+| W | triangles, point down | 0.5 | diagonal | 0.3 | Same as V. |
 | X | triangles, small | 0.3 | diagonal | 0.4 | |
 | Y | triangle, top | 0.4 | diagonal | 0.5 | |
 | Z | triangle (lower right) | 0.7 | diagonal | 0.5 | Guest stem runs along the diagonal; its top arm shrinks into the point. |
@@ -35,9 +35,12 @@ Compatibility of counter type × guest class:
 
 | | straight | bowl | round | diagonal |
 |---|---|---|---|---|
-| round | 1.0 | 0.8 | 0.9 | 0.5 |
+| round | 1.0 | 0.8 | 0.9 | 0.7 |
 | rect | 1.0 | 1.0 | 0.7 | 0.7 |
 | triangle | 0.85 | 0.5 | 0.3 | 0.8 |
+| triangle, point down | 0.4 | 0.3 | 0.4 | 0.8 |
 | V-notch | 0.8 | 0.9 | 0.6 | 0.6 |
 
-Modules built so far: outer D, O, Z, M, E, L; inner E, F, L, I, T, H, B, R.
+Modules built so far: outer D, O, Z, M, E, L, N, V; inner E, F, L, I, T, H, B, R, V.
+
+Tested words: DEZEMBER → DE ZE MB ER. NOVEMBER → N OV E MB ER.
